@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from okx_backend.collector.market_collector import MARK_SOURCE_BARS, TRADE_SOURCE_BARS
+from okx_backend.collector.market_collector import TRADE_SOURCE_BARS
 from okx_backend.db.models import CandleKind
 from okx_backend.services import candle_backfill as module
 from okx_backend.services.candle_backfill import _backfill_one, backfill_candles, backfill_plan
@@ -21,7 +21,6 @@ def test_source_bars_replace_daily_with_its_derivation_source() -> None:
     """对外仍是 1D，但向 OKX 订阅/回填的是 1H：OKX 的 1D 是 UTC+8 口径，不对齐纽约。"""
 
     assert TRADE_SOURCE_BARS == ("1s", "1m", "5m", "15m", "30m", "1H")
-    assert MARK_SOURCE_BARS == ("1m", "5m", "15m", "30m", "1H")
 
 
 @pytest.mark.asyncio

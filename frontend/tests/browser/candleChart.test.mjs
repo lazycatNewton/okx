@@ -38,7 +38,7 @@ before(async () => {
 })
 after(async () => { await browser?.close(); await server?.close() })
 
-async function fixture(t, { kind = 'trade', hold = () => false, fail = false, omit = () => false, dataset } = {}) {
+async function fixture(t, { hold = () => false, fail = false, omit = () => false, dataset } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
   t.after(() => context.close())
   const page = await context.newPage()
@@ -59,7 +59,7 @@ async function fixture(t, { kind = 'trade', hold = () => false, fail = false, om
     if (hold(url)) { pending.push(respond); return }
     await respond()
   })
-  await page.goto(`${origin}/tests/browser/chart-fixture.html?kind=${kind}`)
+  await page.goto(`${origin}/tests/browser/chart-fixture.html`)
   await page.waitForFunction(() => typeof window.renderChart === 'function')
   return { page, errors, requests, release: async () => { for (const respond of pending.splice(0)) await respond() } }
 }
@@ -87,12 +87,12 @@ async function hover(page, candle) {
   return page.locator('.candle-ohlc-legend').innerText()
 }
 
-for (const kind of ['trade', 'mark']) test(`${kind}: default 5m view shows 2 hours, daily view shows 7 days`, async t => {
-  const { page, errors } = await fixture(t, { kind })
+test('default 5m view shows 2 hours, daily view shows 7 days', async t => {
+  const { page, errors } = await fixture(t)
   await ready(page, 300)
   const span = () => page.evaluate(() => { const r = window.chartRecords.at(-1).chart.timeScale().getVisibleRange(); return r.to - r.from })
   assert.equal(await span(), 7200)
-  const screenshot = join(screenshotDir, `${kind}-5m-fixed.png`)
+  const screenshot = join(screenshotDir, 'trade-5m-fixed.png')
   await page.screenshot({ path: screenshot })
   t.diagnostic(`5m screenshot: ${screenshot}`)
   await page.getByRole('button', { name: '1D', exact: true }).click()
@@ -266,12 +266,12 @@ test('New York fall-back hour never deletes or reorders real candles', async t =
   assert.deepEqual(errors, [])
 })
 
-for (const kind of ['trade', 'mark']) test(`${kind}: candle body and wick pixel heights match OHLC on every candle period`, async t => {
+test('candle body and wick pixel heights match OHLC on every candle period', async t => {
   const dataset = bar => candles(25, bar).map((item, i) => ({
     ...item, o: i === 23 ? '104' : '100', c: i === 22 ? '104' : '100',
     h: i === 22 ? '106' : i === 23 ? '105' : '101', l: i === 22 ? '98' : '99',
   }))
-  const { page, errors } = await fixture(t, { kind, dataset })
+  const { page, errors } = await fixture(t, { dataset })
   for (const bar of ['5m', '1m', '15m', '30m', '1D']) {
     await page.getByRole('button', { name: bar, exact: true }).click()
     await ready(page, 25)

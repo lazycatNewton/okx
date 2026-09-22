@@ -7,12 +7,11 @@ import { analyzeChan, type RawBar } from './chan'
 import type { ChanStrokeSegment, ChanZhongshuBox } from './chanPrimitives'
 import type { CandleItem } from './types'
 
-export type ChanKind = 'trade' | 'mark'
+export type ChanKind = 'trade'
 
-// M02（trade）排除 1s/1m；M11（mark）本身没有 1s，只排除 1m。
+// M02 排除 1s/1m。
 const EXCLUDED_BARS: Record<ChanKind, string[]> = {
   trade: ['1s', '1m'],
-  mark: ['1m'],
 }
 
 export function isChanEnabledForBar(kind: ChanKind, bar: string): boolean {

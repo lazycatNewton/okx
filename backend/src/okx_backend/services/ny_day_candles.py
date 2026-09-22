@@ -1,4 +1,4 @@
-"""由官方 `1H` K 线派生纽约自然日 `1D` K 线（M02 成交价 / M11 标记价格）。
+"""由官方 `1H` K 线派生纽约自然日 `1D` K 线（M02 成交价）。
 
 OKX 的 `1D` 是 UTC+8 开盘价口径、`1Dutc` 是 UTC+0 口径，都不是纽约自然日（见
 `ny_day.py` 的说明）。本模块把已入库的官方 `1H` 行按 America/New_York 自然日聚合：
@@ -34,7 +34,8 @@ from okx_backend.services.ny_day import (
 
 
 def _redis_prefix(kind: CandleKind) -> str:
-    return "m02" if kind == CandleKind.TRADE else "m11"
+    assert kind == CandleKind.TRADE
+    return "m02"
 
 
 def aggregate_ny_day(

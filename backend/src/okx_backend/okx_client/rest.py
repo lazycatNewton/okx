@@ -57,7 +57,7 @@ class OkxRestClient:
 
         return await self._get("/api/v5/public/instruments", {"instType": inst_type})
 
-    # -- M02/M11 历史 K 线补数：GET /api/v5/market/history-candles ------------
+    # -- M02 历史 K 线补数：GET /api/v5/market/history-candles ----------------
     async def get_history_candles(
         self,
         inst_id: str,
@@ -79,26 +79,6 @@ class OkxRestClient:
                 "instId": inst_id, "bar": bar, "after": after, "before": before,
                 "limit": str(limit), "adjust": adjust,
             },
-        )
-
-    async def get_history_mark_price_candles(
-        self,
-        inst_id: str,
-        bar: str,
-        after: str | None = None,
-        before: str | None = None,
-        limit: int = 100,
-    ) -> list[list[str]]:
-        """M11 历史标记价格 K 线；20 次/2s/IP，单页最大 100。
-
-        该接口不支持 `adjust` 参数（文档未列出，且实测传入 `adjust=forward` 对返回值
-        无影响）：股票永续标记价格历史 K 线在拆股等公司行为发生前的时段会保留分割前的
-        价格尺度，OKX 未提供前复权版本，本产品也无法在应用层安全地重建复权因子。
-        """
-
-        return await self._get(
-            "/api/v5/market/history-mark-price-candles",
-            {"instId": inst_id, "bar": bar, "after": after, "before": before, "limit": str(limit)},
         )
 
     # -- 初始 K 线（近 1440 条）：GET /api/v5/market/candles -------------------

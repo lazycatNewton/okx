@@ -20,7 +20,6 @@ import { useCandleData } from '../useCandleData'
 import type { CandleItem, TradeBar } from '../types'
 
 const TRADE_BARS: TradeBar[] = ['1s', '1m', '5m', '15m', '30m', '1D']
-const MARK_BARS: TradeBar[] = ['1m', '5m', '15m', '30m', '1D']
 
 interface GenericCandleChartProps {
   instId: string
@@ -223,16 +222,3 @@ export function CandleChart({ instId, realtime }: { instId: string; realtime: Pr
   )
 }
 
-export function MarkPriceChart({ instId, realtime }: { instId: string; realtime: ProductRealtimeState }) {
-  return (
-    <GenericCandleChart
-      instId={instId}
-      realtime={realtime}
-      kind="mark"
-      title="M11 · 标记价格 K 线（ET）"
-      defaultBar="5m"
-      bars={MARK_BARS}
-      ariaLabelPrefix="标记价格"
-    />
-  )
-}

@@ -1,7 +1,7 @@
 import { useProductRealtime } from '../useMarketData'
 import { Book5Table } from './Book5Table'
-import { CandleChart, MarkPriceChart } from './CandleChart'
-import { M25Panel } from './M25Panel'
+import { CandleChart } from './CandleChart'
+import { M25Panel, S04Chart } from './M25Panel'
 import { MarkPriceCard, OpenInterestCard } from './SwapSnapshotCards'
 import { TickerCard } from './TickerCard'
 import { TradesTable } from './TradesTable'
@@ -17,9 +17,9 @@ export function ProductPanel({ instId }: { instId: string }) {
   return (
     <div className="product-panel">
       <CandleChart instId={instId} realtime={realtime} />
-      {isSwap && <MarkPriceChart instId={instId} realtime={realtime} />}
       <div className="product-panel-row">
         <TickerCard state={realtime.ticker} />
+        {isSwap && <S04Chart instId={instId} />}
         <Book5Table state={realtime.books5} />
         <TradesTable state={realtime.trades} />
         {isSwap && (

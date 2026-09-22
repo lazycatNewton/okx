@@ -81,7 +81,7 @@ export function updateSelection(
 
 export function getCandles(
   instId: string,
-  kind: 'trade' | 'mark',
+  kind: 'trade',
   bar: TradeBar,
   limit = 300,
   options: { before?: number; signal?: AbortSignal } = {},

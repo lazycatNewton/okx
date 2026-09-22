@@ -12,18 +12,8 @@ export function formatDecimal(value: unknown, percent = false): string {
   return `${sign === '-' && scaled !== 0n ? '-' : ''}${digits.slice(0, -2)}.${digits.slice(-2)}${percent ? '%' : ''}`
 }
 
-const labels: Record<string, string> = {
-}
-export function detailLabel(key: string): string {
-  return labels[key] ?? `补充字段（${key}）`
-}
 const enums: Record<string, Record<string, string>> = {
   instType: { SPOT: '现货', SWAP: '永续合约', FUTURES: '交割合约', OPTION: '期权', MARGIN: '杠杆现货', EVENTS: '事件合约' },
-  settState: { processing: '结算中', settled: '已结算' },
-  settleType: { settlement: '结算', delivery: '交割', exercise: '行权' },
-  enabled: { true: '已启用', false: '未启用' },
-  side: { buy: '买入', sell: '卖出' },
-  posSide: { long: '多头', short: '空头', net: '净持仓（买卖模式）' },
 }
 export function detailValue(key: string, value: unknown): string {
   if (value == null || value === '') return '—'

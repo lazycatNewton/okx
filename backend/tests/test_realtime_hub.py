@@ -56,7 +56,8 @@ async def test_activate_sends_candle_and_trade_snapshots(monkeypatch: pytest.Mon
         messages.append(json.loads(conn.queue.get_nowait()))
     channels = {message["channel"] for message in messages}
     assert "candle:trade:1m" in channels
-    assert "candle:mark:30m" in channels
+    # 已移除的 M11（标记价格 K 线）频道不得再出现在快照里。
+    assert not {c for c in channels if c.startswith("candle:mark:")}
     assert "trades" in channels
 
 

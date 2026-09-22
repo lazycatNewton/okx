@@ -21,7 +21,6 @@ from datetime import UTC, datetime
 from okx_backend.cache import get_redis
 
 TRADE_BARS = ("1s", "1m", "5m", "15m", "30m", "1D")
-MARK_BARS = ("1m", "5m", "15m", "30m", "1D")
 
 CHANNEL_KEYS = {
     "ticker": "m01:latest:{inst_id}",
@@ -32,10 +31,6 @@ CHANNEL_KEYS = {
     **{
         f"candle:trade:{bar}": f"m02:latest:{{inst_id}}:{bar}"
         for bar in TRADE_BARS
-    },
-    **{
-        f"candle:mark:{bar}": f"m11:latest:{{inst_id}}:{bar}"
-        for bar in MARK_BARS
     },
 }
 

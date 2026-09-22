@@ -1,6 +1,6 @@
 # OKX 项目需求文档
 
-版本：0.46 · 更新日期：2026-09-22
+版本：0.47 · 更新日期：2026-09-22
 
 本文记录已确认要实现的功能及对应接口依据。讨论进度、待定事项、下一步和未确认设计统一记录在 [HANDOFF.md](HANDOFF.md)。当前是已确认需求的阶段性结果，尚非完整实施规格；后续确认的结果持续补入本文。
 
@@ -29,7 +29,7 @@
 当前功能范围：
 
 - 现货独立行情：M01、M02、M03、M05。
-- 永续独立行情：M01、M02、M03、M05、M10、M11、M13、M16、M25。M12、M14、M15 已由用户指令移除（见第 2 节「已移除的能力」）。
+- 永续独立行情：M01、M02、M03、M05、M10、M13、M25。M11、M12、M14、M15、M16 已由用户指令移除（见第 2 节「已移除的能力」）。
 - 共享辅助数据：M22 事件合约市场数据、M23 经济日历，供两类消费者使用，不扩展现货／永续交易产品范围。
 - M06 暂时移出本期；本期不接入高阶深度。
 
@@ -71,27 +71,26 @@
 
 桌面 Web 中每一个 Tab 对应一个由用户选择的 OKX 产品。一个产品 Tab 内同时展示该产品的 K 线视图及其对应的其他数据面板；K 线不是独立 Tab。现货和永续的面板只能展示当前 Tab 对应产品的数据，不得混合不同产品。
 
-第一版中，每个产品 Tab 展示该产品适用的**全部已选数据面板**：现货展示其适用的 M01、M02、M05；永续展示其适用的 M01、M02、M05、M10、M11、M13、M16、M25。第一版不对这些面板做取舍或隐藏；面板清单、布局和交互的修改留待第一版完成后迭代。
+第一版中，每个产品 Tab 展示该产品适用的**全部已选数据面板**：现货展示其适用的 M01、M02、M05；永续展示其适用的 M01、M02、M05、M10、M13、M25。第一版不对这些面板做取舍或隐藏；面板清单、布局和交互的修改留待第一版完成后迭代。S04（M25 子项）展示位置与 M01 同一行，其余 M25 子项（S01、S05）单独成组，见下方布局说明。
 
 M22 预测市场和 M23 经济日历不归属任何单一产品 Tab，而是在桌面 Web 中以一个独立的全局侧边栏展示，供所有产品 Tab 共享。
 
 产品选择发生后立即创建对应产品 Tab；取消选择产品后立即关闭对应 Tab。首次登录时若尚未选择任何产品，主区域显示空白视图。产品选择与 Tab 的创建、关闭同步更新唯一用户的永久全局订阅配置。后续登录按保存的选择顺序恢复全部当前 `live` 产品 Tab，并激活上次活动 Tab；不存在上次活动记录时激活首个已选产品。
 
-产品 Tab 采用组合展示：M01、M10、M13 使用行情概览数值卡片；M02、M11 和 M25 使用图表配合明细数据；M03 使用按时间倒序追加的最新成交（time & sales）列表；M05 使用五档盘口表格；M16 使用按事件排列的列表。每个面板先展示用于判断的核心字段，并提供结构化详情展开；不直接展示原始 JSON。K 线默认打开 `5m` 周期，并默认显示最近 2 小时；`1s`、`1m`、`5m`、`15m`、`30m` 均默认最近 2 小时，`1D` 默认最近 7 天。`1s` 以折线图展示，其余交易价格 K 线使用蜡烛图。图表采用 TradingView Lightweight Charts（HTML5 Canvas），支持十字光标、缩放、平移、价格与时间刻度；不实现画线工具、技术指标、多副图或 TradingView 账户功能。用户可在同一产品 Tab 中切换该产品已选的全部 K 线周期。M25 各统计指标独立选择其已确认周期，默认选择可用的 `5m`。具体视觉布局在第一版完成后迭代。
+产品 Tab 采用组合展示：M01、M10、M13 使用行情概览数值卡片；M02 和 M25 使用图表配合明细数据；M03 使用按时间倒序追加的最新成交（time & sales）列表；M05 使用五档盘口表格。每个面板先展示用于判断的核心字段，并提供结构化详情展开；不直接展示原始 JSON。K 线默认打开 `5m` 周期，并默认显示最近 2 小时；`1s`、`1m`、`5m`、`15m`、`30m` 均默认最近 2 小时，`1D` 默认最近 7 天。`1s` 以折线图展示，其余交易价格 K 线使用蜡烛图。图表采用 TradingView Lightweight Charts（HTML5 Canvas），支持十字光标、缩放、平移、价格与时间刻度；不实现画线工具、技术指标、多副图或 TradingView 账户功能。用户可在同一产品 Tab 中切换该产品已选的全部 K 线周期。M25 各统计指标独立选择其已确认周期，默认选择可用的 `5m`。具体视觉布局在第一版完成后迭代。
 
 M22 与 M23 侧边栏中的数据均按时间倒序展示：M22 按 `expTime` 倒序，M23 按 `date` 倒序。初始加载最新一页，用户点击“加载更多”后再取得更早一页；第一版不提供侧边栏搜索或筛选。各条目可展开结构化详情。数据缺口、断线窗口和首次启动前缺失数据不在前端标注；服务端仍不得伪造或填补缺失数据。
 
-#### M02／M11 K 线的缠论（缠中说禅）结构叠加层
+#### M02 K 线的缠论（缠中说禅）结构叠加层
 
-M02（成交价）与 M11（标记价格）K 线图叠加缠论结构分析：中枢矩形、笔连线、分型点、背离／背驰点标记。分型／笔／中枢／背离算法移植自全局 Skill `/Users/lazycatnewton/development-repo/skills/chan`（`scripts/chan_core.py`）；本期不移植该 Skill 的买卖点（1B/2B/3B 等）判定，留待后续更大的技术分析功能一并规划。
+M02（成交价）K 线图叠加缠论结构分析：中枢矩形、笔连线、分型点、背离／背驰点标记。分型／笔／中枢／背离算法移植自全局 Skill `/Users/lazycatnewton/development-repo/skills/chan`（`scripts/chan_core.py`）；本期不移植该 Skill 的买卖点（1B/2B/3B 等）判定，留待后续更大的技术分析功能一并规划。
 
 - 计算位置：前端浏览器内计算（TypeScript 移植版，`frontend/src/chan.ts`），不新增后端接口或持久化；K 线数据已在客户端、数据量小，无需网络往返。已用相同数据集对照 Python 原始实现验证 TS 移植结果逐字段一致（分型、笔、中枢、背离全部相同）。
-- 适用周期：M02 排除 `1s`、`1m`；M11 排除 `1m`（M11 本身没有 `1s`）。即 M02 的 `5m`／`15m`／`30m`／`1D`、M11 的 `5m`／`15m`／`30m`／`1D` 均启用。
+- 适用周期：M02 排除 `1s`、`1m`，即 `5m`／`15m`／`30m`／`1D` 均启用。
 - 参与计算的数据：只使用已闭合 K 线（`confirm=1`）；最新未闭合的一根仅在蜡烛图/折线图上正常显示，不参与分型/笔/中枢计算，避免结构随实时推送抖动、事后撤销重画。
 - 视觉元素：中枢矩形（半透明色块，覆盖中枢起止时间、上下沿为 ZG/ZD；上沿标注 `ZG + 价格`、下沿标注 `ZD + 价格`）、笔连线（连接各分型点的折线，中性色，不与蜡烛图涨跌色冲突）、分型点（顶/底分型三角标记）、背离/背驰点（背驰 BC-B/BC-S 用醒目色实心标记，背离 DIV-B/DIV-S 用同色系较淡样式区分强度）。
 - 光标数据：光标移动到某一根 K 线时，在图表标题下方展示该根 K 线的收盘价、开盘价、最高价和最低价；沿用后端返回的原始十进制字符串，不经浮点格式化丢失精度。
 - 数据不足时（已闭合 K 线太少、无法形成满足"至少 3 笔重叠"的中枢）：不显示任何中枢/笔，前端提示"当前数据暂不足以形成缠论中枢（数据事实，非缺陷）"，不为凑出结果而扩大拉取范围或做特殊处理。
-- M11 标记价格 K 线图本身在本次一并新增（此前前端未渲染任何 M11 图表组件，只有数据流已就绪）。
 
 浏览器仅调用本产品后端：HTTP 用于登录、产品选择、目录和历史数据，后端 WebSocket 用于实时快照与更新；浏览器不得直接连接 OKX、数据库或 Redis。浏览器打开实时连接后，以 `activate-product`／`deactivate-product` 消息声明当前需要实时展示的产品；产品选择、取消选择仍通过 HTTP 持久化。实时连接断开重连后，后端先发送当前有效快照，再继续推送更新。普通行情暂时不可用时，后端优先下发 Redis 中最后一份有效快照；没有缓存则返回空面板，且前端不标注缺口。
 
@@ -114,17 +113,15 @@ M02（成交价）与 M11（标记价格）K 线图叠加缠论结构分析：�
 | M03 | 现货／永续分别订阅 `trades`，使用 public WS；有成交即接收并向活动产品 Tab 实时转发。每条上游推送可能聚合多笔同价、同来源成交，按 `instId + tradeId` 去重。 |
 | M05 | 已确认五档，现货与永续分别订阅 `books5`，使用 public WS；收到快照后覆盖对应产品的五档盘口 |
 | M06 | 暂时移除，不订阅高阶深度 |
-| M11 | 已确认以 1m 替代 1s，最终为 `1m`、`5m`、`15m`、`30m`、`1D`；`1m`～`30m` 分别订阅 `mark-price-candle1m`、`mark-price-candle5m`、`mark-price-candle15m`、`mark-price-candle30m`，使用 business WS。`1D` 同 M02，订阅 `mark-price-candle1H` 后按纽约自然日聚合。不需要自建 1s 标记价格 K 线 |
 | M10、M13 | 按永续适用正文接入 |
-| M12、M14、M15 | 已由用户指令移除，不订阅 `funding-rate`、`price-limit`、`estimated-price` |
-| M16 | 仅接入永续的 `liquidation-orders` 与 `adl-warning`，使用 `instType=SWAP`；不接入现货风险事件，不自动扩大为杠杆现货 |
+| M11、M12、M14、M15、M16 | 已由用户指令移除，不订阅 `mark-price-candle{bar}`、`funding-rate`、`price-limit`、`estimated-price`、`liquidation-orders`、`adl-warning` |
 | M22 | 确认接入独立辅助市场数据 `event-contract-markets`；按该频道自己的市场标识过滤，不传入普通现货或永续产品冒充事件合约 |
 | M23 | 确认共享一份经济日历；需要 business WS 登录。未配置凭证、鉴权失败、网络故障或账户不满足 VIP1 时，应用均返回空数据集；不影响其他行情连接 |
 | M25 | 继续保留统计与历史查询；其中 K 线历史按所选成交／标记 K 线周期分别映射。多空比、持仓量等统计不是 K 线，必须逐接口核验 period 或查询窗口；已选 S01、S04、S05（S09、S10、S11 已由用户指令移除）；统计周期已按下方配置确认，与 K 线周期分别管理 |
 
 M23 的空数据是本应用的统一前端输出行为：未配置凭证、鉴权失败、网络故障或账户不满足 VIP1 时均返回空数据集，不暴露错误详情。M23 所需 OKX API 凭证仅可由服务端安全配置提供，第一版不提供 Web 管理入口。经济日历在现货与永续消费者之间共享；该规则只适用于 M23，不改变其他行情频道的状态或错误行为。
 
-M02 和 M11 分别维护周期配置。日线对外仍使用 `1D` 标识。
+M02 维护周期配置。日线对外仍使用 `1D` 标识。
 
 ### 已移除的能力
 
@@ -141,6 +138,15 @@ M02 和 M11 分别维护周期配置。日线对外仍使用 `1D` 标识。
 
 `m25_stats.metric` 的取值范围同步收窄为 `S01/S04/S05`，S09／S10／S11 的历史行随迁移删除。随之失效的派生规则一并移除：M25 不再需要由永续 `uly` 推导关联币种 `ccy`（那是 S09 独有的查询维度），M25 全部指标现在都以永续 `instId` 为查询维度。
 
+用户于 2026-09-22 另指令「去掉M16的前后端相关功能」「去掉M11的前后端实现」。移除范围与上述同类：
+
+| 编号 | 原能力 | 原接入方式 | 移除范围 |
+| --- | --- | --- | --- |
+| M16 | 强平订单／ADL 预警 | public WS `liquidation-orders`、`adl-warning` | 频道订阅、`RiskEvent` 模型／`m16_risk_events` 表、`GET /api/market/{instId}/risk-events`、`risk-events` 实时频道、前端 `RiskEventsPanel` 及其展开详情组件 `DetailFields` |
+| M11 | 标记价格 K 线 | business WS `mark-price-candle{bar}` | 频道订阅、`candles.kind='mark'`（ENUM 收窄为仅 `trade`）、`GET /api/v5/market/history-mark-price-candles` 回填方法、`candle:mark:*` 实时频道、前端标记价格图表组件 |
+
+`candles.kind` 的 MySQL ENUM 同步从 `('trade','mark')` 收窄为 `('trade')`，`kind='mark'` 的历史行随迁移删除。`m16_risk_events` 表随迁移一并删除（该表在此前一轮 M16 应用代码移除时遗漏，本次补齐）。
+
 ### 日线口径：纽约自然日
 
 本产品所有时间统一与纽约时间（IANA `America/New_York`，自动应用 EST／EDT）对齐，日粒度也必须按纽约自然日划分。OKX 只提供两种日粒度口径：`1D` 是 **UTC+8 开盘价 K 线**、`1Dutc` 是 **UTC+0 开盘价 K 线**（见 `docs/okex/zh/api/rest/market/historyCandles.md`、`docs/okex/zh/api/rest/tradingData/longShortAccountRatioContract.md`、`openInestVolumeHistory.md`、`contractTakerVolume.md` 的 `bar`／`period` 参数说明），两者都不是纽约自然日——OKX 的 `1D` 日界落在纽约时间中午。
@@ -149,7 +155,7 @@ M02 和 M11 分别维护周期配置。日线对外仍使用 `1D` 标识。
 
 | 序列 | 纽约自然日取值规则 |
 | --- | --- |
-| M02／M11 K 线 | `o` 取当日首根 1H 开盘，`h`／`l` 取当日极值，`c` 取当日末根 1H 收盘，`vol`／`volCcy`／`volCcyQuote` 按日求和；当日未结束时 `confirm=0` |
+| M02 K 线 | `o` 取当日首根 1H 开盘，`h`／`l` 取当日极值，`c` 取当日末根 1H 收盘，`vol`／`volCcy`／`volCcyQuote` 按日求和；当日未结束时 `confirm=0` |
 | M25 S01、S05 | 比值／持仓量属于时点快照，不可求和，取纽约当日 00:00 那一根 1H 的官方读数 |
 | M25 S04 | 主动买入／卖出量是区间累计量，按纽约自然日求和；当日未结束时为截至当前的累计值，随后续采集覆盖 |
 
@@ -166,10 +172,7 @@ M02 和 M11 分别维护周期配置。日线对外仍使用 `1D` 标识。
 | M03 最新成交 | `ts`、`side`、`px`、`sz`、`count` | `tradeId`、`source`、`seqId`、`instId` | public WS `trades`，订阅参数 `channel=trades, instId` |
 | M05 五档盘口 | 五档 `bids`、`asks` 中各档的价格和数量、`ts` | 每档订单数量（数组第 4 项）、`instId`、频道名 | public WS `books5`，订阅参数 `channel=books5, instId`；每条消息是完整五档快照 |
 | M10 标记价格 | `markPx`、`ts` | `instId`、`instType` | public WS `mark-price`，订阅参数 `channel=mark-price, instId` |
-| M11 标记价格 K 线 | `ts,o,h,l,c,confirm` | `bar`、`instId` | business WS `mark-price-candle{bar}`；历史为 `GET /api/v5/market/history-mark-price-candles?instId&bar&before|after&limit` |
 | M13 持仓总量 | `oi`、`oiCcy`、`oiUsd`、`ts` | `instId`、`instType` | public WS `open-interest`，订阅参数 `channel=open-interest, instId` |
-| M16 强平订单 | `instId`、每项 `details.side`、`details.posSide`、`details.bkPx`、`details.sz`、`details.ts` | `uly`、`details.bkLoss`、`details.ccy`、`instType` | public WS `liquidation-orders`，订阅参数 `channel=liquidation-orders, instType=SWAP`；按事件时间排序，不能假定接收顺序等于发生顺序 |
-| M16 ADL 预警 | `instFamily`、`state`、`bal`、`ts` | `instType`；文档标记为已弃用的空字段不作为展示字段 | public WS `adl-warning`，订阅参数 `channel=adl-warning, instType=SWAP` |
 | M25 S01 | `ts`、`longShortAcctRatio` | `instId`、`period` | `GET /api/v5/rubik/stat/contracts/long-short-account-ratio-contract?instId&period&begin|end&limit` |
 | M25 S04 | `ts`、`buyVol`、`sellVol` | `instId`、`period`、返回使用的 `unit` | `GET /api/v5/rubik/stat/taker-volume-contract?instId&period&unit&begin|end&limit` |
 | M25 S05 | `ts`、`oi`、`oiCcy`、`oiUsd` | `instId`、`period` | `GET /api/v5/rubik/stat/contracts/open-interest-history?instId&period&begin|end&limit` |
@@ -180,7 +183,7 @@ M25 的 `begin`／`end` 使用各指标返回的 `ts`。每个 Tab 仅显示其 
 
 ### 保存、保留与首次启动回填
 
-产品目录和订阅目录永久保存，不受历史保留期清理。除 M02／M11 K 线的下列特例外，其他数据采用滚动 7×24 小时保留：以 OKX 的业务时间戳作为过期依据；没有业务时间戳的记录以服务接收时间为准。到期后删除数据正文及原始载荷。所有存储记录额外保留 `site=okex`、`environment=production`、`receivedAt`；价格、数量、比率和成交量按原始十进制字符串保存，不转为浮点数。
+产品目录和订阅目录永久保存，不受历史保留期清理。除 M02 K 线的下列特例外，其他数据采用滚动 7×24 小时保留：以 OKX 的业务时间戳作为过期依据；没有业务时间戳的记录以服务接收时间为准。到期后删除数据正文及原始载荷。所有存储记录额外保留 `site=okex`、`environment=production`、`receivedAt`；价格、数量、比率和成交量按原始十进制字符串保存，不转为浮点数。
 
 | 保存对象 | 保存期限 | 具体形式 |
 | --- | --- | --- |
@@ -191,28 +194,25 @@ M25 的 `begin`／`end` 使用各指标返回的 `ts`。每个 Tab 仅显示其 
 | M03 最新成交 | 7 天 | 按 `instId + tradeId` 去重的追加式成交事件；保存 `px`、`sz`、`side`、`count`、`source`、`seqId`、业务时间与原始 payload。 |
 | M05 五档盘口 | 7 天 | 每个 `instId` 每秒一条完整 `books5` 快照，保存完整 bids／asks、OKX 时间与原始 payload；同一秒内只保留最后快照，不存增量重放日志。 |
 | M10 标记价格 | 7 天 | 每个永续 `instId` 每秒一条标记价格完整快照；同一秒内只保留最后一条。 |
-| M11 标记价格 K 线 | `1D`（纽约自然日）最新 80 根；`1m`／`5m`／`15m`／`30m` 最近 10×24 小时；`1H` 作为日线派生源保留最近 80 个纽约自然日 | 按 `instId + bar + ts` 去重的 OHLC 时间序列；未完结 K 线覆盖更新，`confirm=1` 后保留已闭合版本。 |
 | M13 持仓总量 | 7 天 | 每个永续 `instId` 每秒一条 `oi`／`oiCcy`／`oiUsd` 快照；同一秒内只保留最后一条。 |
-| M16 强平订单与 ADL 预警 | 7 天 | 追加式事件日志。每条消息保存完整 payload、`instId`、OKX 时间与接收时间；以 `instId + 业务时间 + payload 哈希` 仅剔除完全重复的重发，不合并不同事件。 |
 | M22 预测市场目录与更新 | 目录永久；更新 7 天 | 系列、事件和市场的当前目录及字段版本永久保存；WS 市场状态／行权区间更新按 `instId + 业务时间 + payload 哈希` 追加为 7 天修订事件。 |
 | M23 经济日历 | 7 天 | 追加式修订事件日志，保存 `calendarId`、`date`、`ts`、经济字段及原始 payload；按 `calendarId + ts` 去重，使同一经济事件的后续修正可保留。 |
 | M25 S01／S04／S05 | 7 天 | 按“指标编号 + 永续 `instId` + `period` + `unit`（仅 S04 适用）+ 官方时间戳”去重的时间序列，保存该指标的所有官方返回值及查询来源。 |
 
 7 天数据按滚动截止时间清理；K 线按照本表的 80 根／10×24 小时／7 天例外清理；产品目录、订阅目录及 M22 当前目录／版本不参与此清理。服务必须能区分“历史数据不存在”与“历史已被保留规则清理”，不以空数据填补缺口。
 
-首次启动采用混合回填：先恢复永久目录与订阅配置，再刷新现货／永续产品目录及 M22 全量系列、事件、市场目录；随后建立 WS 订阅并立即开始保存实时数据。历史回填在后台执行，不阻塞实时采集或前端可用性。对于可用的历史接口，以分页方式回填至已确认的最低保留量：M02 与 M11 的 `1D` 通过回填官方 `1H` 至第 80 个纽约自然日 00:00、再重采样得到 80 根日线；`1m`／`5m`／`15m`／`30m` 回填最近 10×24 小时，M02 的 `1s` 尽量回填最近 7 天。若官方可用历史不足目标，保存可获取的全部历史，不伪造、聚合或插值。
+首次启动采用混合回填：先恢复永久目录与订阅配置，再刷新现货／永续产品目录及 M22 全量系列、事件、市场目录；随后建立 WS 订阅并立即开始保存实时数据。历史回填在后台执行，不阻塞实时采集或前端可用性。对于可用的历史接口，以分页方式回填至已确认的最低保留量：M02 的 `1D` 通过回填官方 `1H` 至第 80 个纽约自然日 00:00、再重采样得到 80 根日线；`1m`／`5m`／`15m`／`30m` 回填最近 10×24 小时，`1s` 尽量回填最近 7 天。若官方可用历史不足目标，保存可获取的全部历史，不伪造、聚合或插值。
 
-M02 的历史回填请求统一附带 `adjust=forward`：该参数仅对股票永续合约生效，返回前复权 OHLC（拆股等公司行为发生前的历史价格按当前股本尺度换算），成交量同比例调整、成交额不调整；对其余产品该参数无实际影响，因此可以统一附带而不需要按产品类型分支。`GET /api/v5/market/mark-price-candles`／`history-mark-price-candles` 均不支持 `adjust` 参数（官方文档未列出，且实测传入无效），因此 M11 标记价格历史 K 线在对应公司行为发生前的时段会保留未复权前的价格尺度；这是当前 OKX 接口的已知限制，不是本产品实现缺陷，也无法在应用层安全重建复权因子。实时逐笔成交（M03）、Ticker（M01）、五档盘口（M05）、标记价格快照（M10）均为当期状态，不涉及历史复权问题。
+M02 的历史回填请求统一附带 `adjust=forward`：该参数仅对股票永续合约生效，返回前复权 OHLC（拆股等公司行为发生前的历史价格按当前股本尺度换算），成交量同比例调整、成交额不调整；对其余产品该参数无实际影响，因此可以统一附带而不需要按产品类型分支。实时逐笔成交（M03）、Ticker（M01）、五档盘口（M05）、标记价格快照（M10）均为当期状态，不涉及历史复权问题。
 
 其他可回填对象仍以分页方式尽量回填最近 7 天：
 
 - M02 使用 `GET /api/v5/market/history-candles`，按产品和已选 `bar` 分页回填；
-- M11 使用 `GET /api/v5/market/history-mark-price-candles`，按永续产品和已选 `bar` 分页回填；
 - M25 逐项调用已选的 S01、S04、S05 历史／统计接口，按各接口的时间游标和页面限制回填。
 
 无法从本期已选接口回填的实时快照、风险事件、M22 更新和 M23 数据，从首次成功接收对应 WS 数据起积累；不得用聚合、插值或复制数据补满。回填记录与实时记录使用相同去重键，较新 WS 数据不得被较旧 REST 回填覆盖。
 
-回填接口依据：`docs/okex/zh/api/rest/market/historyCandles.md`、`docs/okex/zh/api/rest/market/historyMarkPriceCandles.md`，以及本节 M25 所列的接口正文。`history-candles` 的 `1s` 支持查询最近 3 个月；上述两类 K 线历史接口均按 `after`／`before` 分页，普通历史 K 线单页最多 300 条、标记价格历史 K 线单页最多 100 条，均为 20 次／2 秒／IP。
+回填接口依据：`docs/okex/zh/api/rest/market/historyCandles.md`，以及本节 M25 所列的接口正文。`history-candles` 的 `1s` 支持查询最近 3 个月；按 `after`／`before` 分页，单页最多 300 条，20 次／2 秒／IP。
 
 ### M22：事件合约辅助市场
 
@@ -239,9 +239,9 @@ M23 侧边栏每项核心展示 `event`、`region`、`date`、`importance`、`ac
 
 浏览器 HTTP 均使用本产品会话 Cookie。`POST /api/session/login` 接受用户名和密码，成功建立会话；`DELETE /api/session` 立即退出。`GET /api/bootstrap` 返回当前用户、永久产品选择、产品选择顺序、上次活动 Tab、可用产品目录版本和 M22／M23 侧边栏首屏。`GET /api/products` 支持 `instType`、`state` 和 `q`（`instId` 搜索）；返回所有发现状态及是否可选。
 
-产品选择使用 `PUT /api/subscriptions/products`：请求体是有序 `instId` 列表，后端原子保存为永久全局配置；响应返回当前有效选择及被拒绝的非 `live` 项。`GET /api/market/{instId}/candles` 接受 `kind=trade|mark`、`bar`、`before`、`limit`；返回本服务按 M02／M11 对应保留规则保存的时间序列。`GET /api/aux/event-contract-markets` 使用不透明 `cursor` 分页并按 `expTime` 倒序；`GET /api/aux/economic-calendar` 使用不透明 `cursor` 分页并按 `date` 倒序。每页大小由后端限定，响应包含 `items`、`nextCursor` 和 `hasMore`；M23 不可用时返回空 `items`。
+产品选择使用 `PUT /api/subscriptions/products`：请求体是有序 `instId` 列表，后端原子保存为永久全局配置；响应返回当前有效选择及被拒绝的非 `live` 项。`GET /api/market/{instId}/candles` 接受 `kind=trade`、`bar`、`before`、`limit`；返回本服务按 M02 对应保留规则保存的时间序列。`GET /api/aux/event-contract-markets` 使用不透明 `cursor` 分页并按 `expTime` 倒序；`GET /api/aux/economic-calendar` 使用不透明 `cursor` 分页并按 `date` 倒序。每页大小由后端限定，响应包含 `items`、`nextCursor` 和 `hasMore`；M23 不可用时返回空 `items`。
 
-浏览器 WebSocket 固定为本产品 `/ws/app`。客户端消息为 `{ "type": "activate-product", "instId": "..." }` 或 `{ "type": "deactivate-product", "instId": "..." }`。服务端消息使用 `{ "type", "instId", "channel", "data", "sourceTs", "receivedAt" }` 信封：`snapshot` 为当前缓存状态，`update` 为新数据，`empty` 为当前无可用数据；`empty` 不表示历史缺口。M02／M11 的 `channel` 分别为 `candle:{kind}:{bar}`，未完结的同一时间戳 K 线更新覆盖前端已有记录；M03 的 `channel` 为 `trades`，成交事件按 `tradeId` 追加。重连后，对全部当前活动产品先发送各频道 `snapshot`，再发送 `update`。
+浏览器 WebSocket 固定为本产品 `/ws/app`。客户端消息为 `{ "type": "activate-product", "instId": "..." }` 或 `{ "type": "deactivate-product", "instId": "..." }`。服务端消息使用 `{ "type", "instId", "channel", "data", "sourceTs", "receivedAt" }` 信封：`snapshot` 为当前缓存状态，`update` 为新数据，`empty` 为当前无可用数据；`empty` 不表示历史缺口。M02 的 `channel` 为 `candle:trade:{bar}`，未完结的同一时间戳 K 线更新覆盖前端已有记录；M03 的 `channel` 为 `trades`，成交事件按 `tradeId` 追加。重连后，对全部当前活动产品先发送各频道 `snapshot`，再发送 `update`。
 
 React 前端将 WebSocket 建连、重连、消息规范化和产品／频道状态维护封装为独立数据层；Tab、数值卡片、图表、盘口和侧边栏只读取该状态，不自行直连 OKX 或管理上游订阅。图表按已规范化的时间序列渲染，不在渲染组件内执行历史请求或行情计算。
 
@@ -297,9 +297,7 @@ S01／S04／S05 均采集 `5m、15m、1D`；其中 `1D` 一律按上文「日线
 | M03 | `api/ws/public_channel/trades.md` |
 | M05 | `api/ws/public_channel/books.md` |
 | M10 | `api/ws/public_channel/markPrice.md` |
-| M11 | `api/ws/public_channel/markPriceCandle.md` |
 | M13 | `api/ws/public_channel/openInterest.md` |
-| M16 | `api/ws/public_channel/liquidationOrders.md`、`api/ws/public_channel/adlWarning.md` |
 | M22 | `api/ws/public_channel/eventContractMarkets.md` |
 | M23 | `api/ws/private_channel/economicCalendar.md` |
 
@@ -309,19 +307,19 @@ REST 初始化、补数与首次启动混合回填已确认为产品行为，具
 
 Global 站 REST 以 Skill 的站点表和端点正文为准，统一使用 `https://www.okx.com`；介绍页中出现的 `openapi.okx.com` 不覆盖站点表或端点正文。S01 与 S04 均为 `5 次／2 秒／IP + instId`、`limit≤100`；S05 为 `10 次／2 秒／IP + instId`、`limit≤100`。三者均使用 `instId`（适用 SWAP）、`period`、`begin`、`end` 和 `limit`。本期实际请求的 `period` 为 `5m`、`15m`、`1H`——对外的 `1D` 由 `1H` 按纽约自然日重采样，不请求 OKX 的 `1D`（UTC+8 口径）或 `1Dutc`（UTC+0 口径）。
 
-M10、M13 都以 `channel` 与 `instId` 订阅；M16 强平以 `channel=liquidation-orders, instType=SWAP`，ADL 以 `channel=adl-warning, instType=SWAP`（可选 `instFamily`）。M16 强平消息不能按接收顺序推断事件顺序。M22 的系列、事件和市场 REST 均为 `10 次／2 秒／IP`，事件和市场均用 `seriesId`、可选 `eventId`、`before`／`after` 与 `limit≤100` 分页，不传 `state`。M23 REST 为 `1 次／5 秒／IP`，按 `date` 使用 `before`／`after` 且 `limit≤100`。
+M10、M13 都以 `channel` 与 `instId` 订阅。M22 的系列、事件和市场 REST 均为 `10 次／2 秒／IP`，事件和市场均用 `seriesId`、可选 `eventId`、`before`／`after` 与 `limit≤100` 分页，不传 `state`。M23 REST 为 `1 次／5 秒／IP`，按 `date` 使用 `before`／`after` 且 `limit≤100`。
 
 ## 4. 基于已确认需求的验收结果
 
 - 前端与后台策略／分析均可消费其所需行情。
 - 使用全球站实盘行情，现货和永续按已选集合提供数据。
-- 成交价格 K 线提供 1s／1m／5m／15m／30m／1D，1s 以折线图展示；永续标记价格 K 线提供 1m／5m／15m／30m／1D。日线按纽约自然日划分（见「日线口径：纽约自然日」）。
-- 成交价格和标记价格日线各保留最新 80 根；分钟级各保留最近 10×24 小时；首次启动时回填到目标或官方可获取最大量。
+- 成交价格 K 线提供 1s／1m／5m／15m／30m／1D，1s 以折线图展示。日线按纽约自然日划分（见「日线口径：纽约自然日」）。
+- 成交价格日线保留最新 80 根；分钟级各保留最近 10×24 小时；首次启动时回填到目标或官方可获取最大量。
 - M03 公共成交持续采集、保存 7 天，并在活动产品 Tab 实时展示。
 - 普通深度为五档；本期不接入 M06 高阶深度。
-- M16 仅用于永续；M22 作为独立辅助市场数据提供。
+- M22 作为独立辅助市场数据提供。
 - M23 为共享数据；未配置凭证、鉴权失败、网络故障或账户不满足 VIP1 时均返回空。
-- M25 仅包含已选六项，并使用各自已确认的周期／时间口径。
+- M25 仅包含已选三项（S01、S04、S05），并使用各自已确认的周期／时间口径。
 - 除 K 线的 80 根／10×24 小时／7 天例外外，历史数据以业务时间滚动保留 7 天；首次启动尽量回填至已确认下限，无法回填的数据从首次接收开始积累并保留缺口事实。
 - 仅 `live` 产品可被选择；已选产品状态变化会关闭或恢复对应 Tab，且持久化选择不丢失。
 - 登录会话、浏览器到后端的数据边界和实时快照恢复遵循“前端形态与使用范围”及“数据视图与产品面板”的规定。
@@ -335,7 +333,7 @@ M10、M13 都以 `channel` 与 `instId` 订阅；M16 强平以 `channel=liquidat
 | 会话 | 正确凭证建立当前浏览器会话；新浏览器登录使旧会话失效；连续 5 次失败后 15 分钟内拒绝新的登录；退出立即失效。 |
 | 持续采集 | 已选 live 产品在浏览器关闭、Tab 非活动和用户退出后仍持续写入所选行情；活动 Tab 变化只影响浏览器实时消息。 |
 | 实时浏览器数据 | 激活产品后收到各可用频道的 `snapshot` 与后续 `update`；K 线最快按上游每秒更新、同时间戳未完结 K 线覆盖；成交事件追加；重连先收到快照；无缓存的不可用普通行情显示空面板。 |
-| 历史与回填 | K 线、标记 K 线和 M25 按定义的键去重；K 线日线保留 80 根、分钟级保留 10×24 小时，首次启动回填至目标或可用最大量；不伪造无法回填的数据。 |
+| 历史与回填 | K 线和 M25 按定义的键去重；K 线日线保留 80 根、分钟级保留 10×24 小时，首次启动回填至目标或可用最大量；不伪造无法回填的数据。 |
 | M22／M23 | M22 建立完整目录并按 expTime 倒序分页；M23 在可用时按 date 倒序分页，在未配置凭证、鉴权失败、网络故障或非 VIP1 时返回空集。 |
 | 策略消费者 | 受信任部署内策略可显式请求目录、历史或实时流，其请求不改变后台已选产品采集集合。 |
 

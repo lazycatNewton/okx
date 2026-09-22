@@ -70,7 +70,7 @@ def group_by_ny_day(rows: Iterable[tuple[int, dict]]) -> dict[int, list[tuple[in
 
 
 def decimal_sum(values: Iterable[str | None]) -> str | None:
-    """求和成交量类字段；全为 None 时返回 None（M11 标记价格 K 线没有量字段）。"""
+    """求和成交量类字段；全为 None 时返回 None。"""
 
     total = Decimal(0)
     seen = False

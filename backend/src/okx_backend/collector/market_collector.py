@@ -43,11 +43,9 @@ from okx_backend.services.ny_day_candles import on_source_candle_stored
 # 见 services/ny_day_candles.py；OKX 自身的 `1D` 是 UTC+8 开盘口径，与本产品统一的纽约
 # 时区展示不对齐，因此不再直接订阅。
 TRADE_BARS = ("1s", "1m", "5m", "15m", "30m", "1D")
-MARK_BARS = ("1m", "5m", "15m", "30m", "1D")
 
 # 实际向 OKX 订阅/回填的源周期：把 `1D` 换成派生源 `1H`，其余保持不变。
 TRADE_SOURCE_BARS = tuple(NY_DAY_SOURCE_BAR if bar == "1D" else bar for bar in TRADE_BARS)
-MARK_SOURCE_BARS = tuple(NY_DAY_SOURCE_BAR if bar == "1D" else bar for bar in MARK_BARS)
 
 
 @dataclass(frozen=True)
@@ -63,12 +61,9 @@ class CandleRow:
     confirm: str
 
 
-def parse_candle_row(kind: CandleKind, row: list[str]) -> CandleRow:
-    """OKX 的 M02 是 9 列，M11 标记价格 K 线只有 6 列。"""
+def parse_candle_row(row: list[str]) -> CandleRow:
+    """OKX 的 M02 K 线固定 9 列。"""
 
-    if kind == CandleKind.MARK:
-        ts_ms, o, high, low, close, confirm = row
-        return CandleRow(ts_ms, o, high, low, close, None, None, None, confirm)
     ts_ms, o, high, low, close, vol, vol_ccy, vol_ccy_quote, confirm = row
     return CandleRow(ts_ms, o, high, low, close, vol, vol_ccy, vol_ccy_quote, confirm)
 
@@ -111,10 +106,6 @@ class MarketCollector:
             for bar in TRADE_SOURCE_BARS:
                 business_channels.add(ChannelArg(channel=f"candle{bar}", inst_id=inst_id))
             if inst_type == "SWAP":
-                for bar in MARK_SOURCE_BARS:
-                    business_channels.add(
-                        ChannelArg(channel=f"mark-price-candle{bar}", inst_id=inst_id)
-                    )
                 # M10/M13：需求文档只对永续接入，现货不订阅这些频道。
                 public_channels.add(ChannelArg(channel="mark-price", inst_id=inst_id))
                 public_channels.add(ChannelArg(channel="open-interest", inst_id=inst_id))
@@ -277,7 +268,7 @@ class MarketCollector:
             await session.execute(stmt)
         await get_hub().broadcast_update(inst_id, "open-interest", row)
 
-    # -- business: trade / mark-price candles -------------------------------
+    # -- business: trade candles ---------------------------------------------
     async def _on_business_message(self, message: dict) -> None:
         arg = message.get("arg", {})
         channel: str = arg.get("channel", "")
@@ -287,9 +278,6 @@ class MarketCollector:
         if channel.startswith("candle"):
             kind = CandleKind.TRADE
             bar = channel.removeprefix("candle")
-        elif channel.startswith("mark-price-candle"):
-            kind = CandleKind.MARK
-            bar = channel.removeprefix("mark-price-candle")
         else:
             return
         for row in message.get("data", []):
@@ -301,7 +289,7 @@ class MarketCollector:
         *, historical: bool = False,
     ) -> None:
         try:
-            candle = parse_candle_row(kind, row)
+            candle = parse_candle_row(row)
         except ValueError:
             logger.warning(f"unexpected candle row for {inst_id}/{kind}/{bar}: {row!r}")
             return
@@ -313,7 +301,7 @@ class MarketCollector:
             "c": candle.close, "vol": candle.vol, "volCcy": candle.vol_ccy,
             "volCcyQuote": candle.vol_ccy_quote, "confirm": candle.confirm,
         }
-        prefix = "m02" if kind == CandleKind.TRADE else "m11"
+        prefix = "m02"
         # `1H` 只是纽约日线的派生源，不作为对外周期：不写它的最新值缓存、不向浏览器广播，
         # 否则前端会收到一个它从未订阅的频道。
         is_source_only = bar == NY_DAY_SOURCE_BAR

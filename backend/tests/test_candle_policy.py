@@ -1,14 +1,13 @@
-"""M02/M11 周期与保留规则。"""
+"""M02 周期与保留规则。"""
 
 from datetime import UTC, datetime, timedelta
 
-from okx_backend.collector.market_collector import MARK_BARS, TRADE_BARS
+from okx_backend.collector.market_collector import TRADE_BARS
 from okx_backend.services.candle_policy import candle_cutoff_ms, is_count_limited_bar
 
 
-def test_collector_subscribes_confirmed_trade_and_mark_bars() -> None:
+def test_collector_subscribes_confirmed_trade_bars() -> None:
     assert TRADE_BARS == ("1s", "1m", "5m", "15m", "30m", "1D")
-    assert MARK_BARS == ("1m", "5m", "15m", "30m", "1D")
 
 
 def test_minute_candle_cutoff_is_ten_days_before_now() -> None:

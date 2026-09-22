@@ -23,15 +23,15 @@
 - 系统包含 Python 后端服务、持久化数据库（MySQL 8.0+，远程非本机）和 Redis 缓存；数据库保存永久配置与历史事实，Redis 只保存可重建的最新状态缓存。行情后端允许使用第三方 SDK `python-okx`（PyPI）承担部分 REST／WS 调用，但不替代本文档确认的频道、参数、限速、存储与回填规则的实现与核验。未来 Python 策略／研究组件作为独立内部消费者，不直接连接 OKX 上游。
 - 已选行情能力和频道：
   - 现货：M01、M02、M05。
-  - 永续：M01、M02、M05、M10、M11、M13、M16、M25。
+  - 永续：M01、M02、M05、M10、M13、M25。
 - 共享辅助数据：M22 事件合约市场、M23 经济日历。
 - M22 保留全部自动发现的预测市场；不按分类、系列、事件或状态筛选。初始数据用系列、事件、市场 REST 接口获取，后续状态更新来自 `event-contract-markets` WS。
 - M06 已移出本期。M05 使用 `books5` 五档盘口。
-- 成交价 K 线使用 `1s`、`5m`、`15m`、`1D`；永续标记价格 K 线使用 `1m`、`5m`、`15m`、`1D`。
+- 成交价 K 线使用 `1s`、`1m`、`5m`、`15m`、`30m`、`1D`。
 - 全系统时间与纽约时间（`America/New_York`，含 EST／EDT）对齐。**所有 `1D` 都不是 OKX 的 `1D`**——OKX 的 `1D` 是 UTC+8 开盘价口径、`1Dutc` 是 UTC+0 口径，都不是纽约自然日；K 线与 M25 的日线一律请求官方 `1H` 后由后端按纽约自然日重采样（见 `backend/src/okx_backend/services/ny_day.py`）。不要改回直接订阅／请求 OKX 的 `1D` 或 `1Dutc`，也不要用写死的 UTC-4 偏移代替时区库。
-- M16 仅适用于永续；M23 是需鉴权的共享频道，未配置凭证、鉴权失败、网络故障或账户未达 VIP1 时应用返回空。
+- M23 是需鉴权的共享频道，未配置凭证、鉴权失败、网络故障或账户未达 VIP1 时应用返回空。
 - M25 只包含 S01、S04、S05（均为 `5m`／`15m`／`1D`）。
-- **M12、M14、M15、S09、S10、S11 已由用户指令（2026-09-22）整体移除**：不要重新订阅 `funding-rate`／`price-limit`／`estimated-price`，不要重新实现 loan-ratio／funding-rate-history／premium-history，也不要重建 `m12_funding_rates`／`m14_price_limits`／`m15_estimated_prices` 表。编号保留不复用，详见 `okx-requirements.md` 的「已移除的能力」。
+- **M11、M12、M14、M15、M16、S09、S10、S11 已由用户指令（2026-09-22）整体移除**：不要重新订阅 `mark-price-candle{bar}`／`funding-rate`／`price-limit`／`estimated-price`／`liquidation-orders`／`adl-warning`，不要重新实现 loan-ratio／funding-rate-history／premium-history，也不要重建 `m12_funding_rates`／`m14_price_limits`／`m15_estimated_prices`／`m16_risk_events` 表或 `candles.kind='mark'`。编号保留不复用，详见 `okx-requirements.md` 的「已移除的能力」。
 - 每个桌面 Web Tab 对应一个用户选择的 OKX 产品，Tab 内含 K 线及该产品适用的全部已选数据面板；K 线不是独立 Tab。选择／取消选择产品立即创建／关闭 Tab，未选产品时显示空白视图；登录恢复全部当前 live Tab、保持选择顺序并优先恢复上次活动 Tab。分钟及秒级 K 线默认最近 2 小时，日线默认最近 7 天；第一版没有自定义历史范围。产品面板使用卡片、图表、表格、事件列表与结构化详情的组合，M22／M23 在独立全局侧边栏按时间倒序展示并可加载更早页。浏览器只连接本产品后端，HTTP 处理目录／历史／选择，后端 WebSocket 推送快照和实时更新；前端不标注数据缺口。
 
 完整接口映射、适用条件和已知限制以 `okx-requirements.md` 为准，不要凭本摘要补充接口参数。

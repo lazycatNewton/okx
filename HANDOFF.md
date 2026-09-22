@@ -1,6 +1,6 @@
 # HANDOFF — OKX 需求完善交接
 
-更新日期：2026-09-22 · 当前对应需求版本：0.46
+更新日期：2026-09-22 · 当前对应需求版本：0.47
 
 ## 1. 接手时先读
 
@@ -16,6 +16,24 @@
 本轮再次确认：在后续完善 `okx-requirements.md` 的每次有效工作结束前，均须同步本文件的恢复点、待定事项、下一步和变更记录；这不代表后台自动更新，需由后续实际工作触发。
 
 ## 2. 当前进度与恢复点
+
+### 0.68 移除 M11／补齐遗漏的 M16 迁移／S04 展示位置上移（2026-09-22）
+
+用户先指令「去掉M16的前后端相关功能」（上一轮会话完成，但当时遗漏更新本文件与需求正文，且没有配套写删表迁移——`m16_risk_events` 表一直是孤儿表），本轮开场先补齐这两处遗漏；随后用户指令「去掉M11的前后端实现。将S04的展示位置上移，使与M01在同一行」。需求正文更新为 **0.47**，「已移除的能力」小节新增 M11／M16 两行。
+
+**补齐 M16 遗留**：新迁移 `75fd54ac1bfe` drop `m16_risk_events` 表（`downgrade()` 可重建表结构，不恢复数据）；`okx-requirements.md` 多处仍写 M16 为在用能力，本轮一并改为「已移除」。
+
+**M11（标记价格 K 线）移除**：
+
+- 后端：`market_collector.py` 删除 `MARK_BARS`／`MARK_SOURCE_BARS`、`mark-price-candle{bar}` 订阅与消息分发分支；`parse_candle_row()` 不再按 `kind` 分列（M11 是 6 列、M02 是 9 列，现在只剩 M02 一种格式，签名简化为 `parse_candle_row(row)`）。`candle_backfill.py` 删除标记价格分支，`_backfill_one` 固定走 `get_history_candles`。`okx_client/rest.py` 删除 `get_history_mark_price_candles`。`realtime/hub.py` 的 `CHANNEL_KEYS` 删除 `candle:mark:*` 系列。`market_router.py` 的 `GET .../candles` 的 `kind` 参数收窄为只接受 `trade`。`db/models.py` 的 `CandleKind` 收窄为只剩 `TRADE`。新迁移 `ad4f1b5392f5`：先删 `candles.kind='MARK'` 的行，再把该列的 MySQL ENUM 从 `('TRADE','MARK')` 收窄为 `('TRADE')`（顺序同 0.66 的经验，避免残留行在严格模式下让 ALTER 失败）。
+- 前端：`CandleChart.tsx` 删除 `MarkPriceChart` 与 `MARK_BARS`（`GenericCandleChart` 内部结构保留，现在只有 `CandleChart` 一个调用方）；`ProductPanel.tsx` 不再渲染标记价格图表；`chanOverlay.ts` 的 `ChanKind` 收窄为 `'trade'`；`useCandleData.ts`／`api.ts` 的 `kind` 参数同步收窄为 `'trade'`。
+- 测试：`test_candle_parser.py`／`test_candle_policy.py`／`test_candle_backfill.py`／`test_candle_adjust.py`／`test_realtime_hub.py` 删除或改写 MARK 相关用例；浏览器测试 `chart-fixture.jsx`／`candleChart.test.mjs` 的 `?kind=mark` 变体一并移除。
+
+**S04 展示位置上移**：`M25Panel.tsx` 的 `S04Chart` 改为独立 `export`，自带周期选择器（不再共享 `M25Panel` 的 `period` 状态），包一层 `panel numeric-card` 使其能和 `TickerCard` 等卡片一样放进 `product-panel-row`；`M25Panel` 本体只剩 S01／S05。`ProductPanel.tsx` 在 `product-panel-row` 内、`TickerCard` 之后插入 `<S04Chart instId={instId} />`（仅 `isSwap`）。
+
+**顺带修复一个由 0.66 遗留的真实回归**：`npm test` 发现 `detailDisplay.test.ts` 断言 `detailLabel('bkPx')` 等 M16 字段标签，但 0.66/M16 removal 早把 `labels` 清空——测试实际是红的，说明那一轮移除后没有跑过前端单元测试。核实后发现 `detailLabel()`／`<DetailFields>` 组件此前**只有 `RiskEventsPanel.tsx` 一个调用方**，该组件已在 M16 移除时删除，`DetailFields.tsx` 因此完全孤儿；一并删除该组件，`detailDisplay.ts` 的 `labels`／`enums` 收窄为仍有直接调用方的 `instType`，测试改为只断言 `instType` 分支。
+
+**验证**：后端 ruff／mypy／pytest **110 passed**（`alembic heads` 确认迁移链单一 head：`db01090c5c59→827106eec8f4→6060da89549d→a4c71e2f0b35→c93b5ad10e77→75fd54ac1bfe→ad4f1b5392f5`，未针对真实远程 MySQL 执行升级）；前端 `npm test` **22 passed**、`npm run test:charts`（Playwright 真实浏览器）**14 passed**、`tsc -b && vite build` 通过、`oxlint` 仅既有 `ProductSelector.tsx` 警告。**未做**：真实登录浏览器目视验证 S04 新位置的视觉效果与断点换行——本环境无法访问远程 MySQL／Redis／OKX 凭证，只验证了自动化测试与构建。
 
 ### 0.67 修复跨产品／周期的 K 线缺口、旧 OHLC 与显示精度（2026-09-22）
 
@@ -192,9 +210,9 @@ Nacos 远程配置的实际 Data ID、Group 和 YAML 字段结构（`backend/src
 
 ## 4. 下一步顺序
 
-当前实现恢复点以 0.67 为准：K 线修复已完成代码与自动回归、真实数据库局部复核，尚未登录真实用户浏览器目视验收。以下为原需求阶段的后续备忘，不得用它撤销已经获授权的实现或重复询问已确认事项。
+当前实现恢复点以 0.68 为准：M11 移除、M16 迁移补齐、S04 展示位置上移均已完成代码与自动回归，尚未登录真实用户浏览器目视验收（本环境无远程 MySQL／Redis／OKX 凭证）。以下为原需求阶段的后续备忘，不得用它撤销已经获授权的实现或重复询问已确认事项。
 
-1. 逐接口核验仍在范围内的 M10、M11、M13、M16、M22、M23 和 M25（S01／S04／S05）的参数、站点支持、分页、限速与响应字段；解决 REST 基地址资料冲突。
+1. 逐接口核验仍在范围内的 M10、M13、M22、M23 和 M25（S01／S04／S05）的参数、站点支持、分页、限速与响应字段；解决 REST 基地址资料冲突。M11、M16 已由用户指令移除，不再需要核验。
 2. 将接口契约补为可验证的操作案例，统一需求、交接和版本历史表述。
 3. 用户愿意继续时再讨论性能和部署；确定调用顺序、数据模型与恢复方案。
 4. 完整性检查通过后，将需求标为可交付给下一次实现对话。不要因为已创建交接文档就认为需求已完成。
@@ -222,7 +240,7 @@ Nacos 远程配置的实际 Data ID、Group 和 YAML 字段结构（`backend/src
 - 比例类指标不可未经确认自行聚合。
 - S01／S04 的部分原文 instId 示例形如 BTC-USDT，虽标适用永续／交割，具体合法标识须再交叉核对，不能只凭样例去掉 SWAP 后缀。
 - M25 S04 已确认提供 `unit` 选择器：`0` 为币、`1` 为合约、`2` 为 U，首次打开默认 `1`。三个单位分别查询、保存和展示，不做前端换算。
-- M10～M16、M22 的完整请求过滤、返回字段、M25 各项分页／保留窗口和所有选定 REST 权限仍需形成完整调用规格；当前来源表不等于逐字段核验完成。
+- M10、M13、M22 的完整请求过滤、返回字段、M25 各项分页／保留窗口和所有选定 REST 权限仍需形成完整调用规格；当前来源表不等于逐字段核验完成。M11、M16 已移除，不再需要。
 - 全球站 `sites.json` 的 REST 为 www.okx.com，同版本 introduction 正文为 openapi.okx.com，已发现资料内部差异；选定 REST 接入配置时核实并记录依据，不静默消除冲突。
 - M22 首次订阅不推快照；初始状态确定由全量系列、事件、市场 REST 调用建立，后续以 `event-contract-markets` WS 更新。
 - 当前公共行情文档没有统一币对数上限；已核实建连 3 次/秒/IP、每连接登录／订阅／退订合计 480 次/小时、多频道参数长度 64 KB。480 不是产品数量，指定私有频道的 30 连接限制不适用于公共行情币对数。
@@ -383,3 +401,4 @@ Skill 查询：先读取 SKILL.md 与 sites.json 检查兼容性；按模块索�
 | 2026-09-22 | 0.65 | 用户指令“矫正 S01 和 S05 的时间，该系统的所有时间都应该与 UTC-4，即纽约时间对齐”。核实后确认前端显示层无误，偏差在数据的日线分桶口径：OKX 的 `1D` 是 UTC+8 开盘价口径（`1Dutc` 为 UTC+0），库中 S01／S05／S04 的 `1D` 与 M02／M11 的 `1D` 时间戳全部落在 UTC 16:00 即纽约中午。用户选择“后端按纽约自然日重采样”并覆盖全系统所有 `1D`。实现：新增 `services/ny_day.py`／`services/ny_day_candles.py`，K 线与 M25 的日线一律改为请求官方 `1H` 后按 `America/New_York` 自然日重采样（K 线 OHLC 聚合、S01／S05／S09 取日界读数、S04 按日求和），WS 订阅由 `candle1D`／`mark-price-candle1D` 改为 `candle1H`／`mark-price-candle1H`，`1H` 作为不对外的派生源保留 80 个自然日，`1D` 轮询改为每小时回看 48 根，迁移 `a4c71e2f0b35` 清除旧 UTC+8 口径日线行。真实数据验证：重建后 640 行日线全部落在纽约 00:00、0 行错位。ruff／mypy／pytest 113 passed，前端 18 项测试与构建通过。需求正文更新为 0.45 |
 | 2026-09-22 | 0.66 | 用户指令“去掉前后端关于 M12/M14/M15/S09/S10/S11 的实现”，属范围收缩。后端退订 `funding-rate`／`price-limit`／`estimated-price` 并删除对应落库方法、hub 频道、三个 REST 方法（loan-ratio／funding-rate-history／premium-history）、S09/S10/S11 的回填与轮询、`backfill_dict_metric`、`ccy_from_uly`／`_resolve_ccy_set`（M25 不再需要 `uly`→`ccy` 派生，全部指标改以永续 instId 查询）、保留清理条目与三个 ORM 模型；`M25Metric` 收窄为 S01/S04/S05。迁移 `c93b5ad10e77` 删除 S09/S10/S11 历史行、收窄 MySQL ENUM、drop `m12_funding_rates`／`m14_price_limits`／`m15_estimated_prices`。前端删除三个数据类型、三个 channel 状态、三张快照卡片、S09 图表与 S10/S11 表格及失效样式。测试删除专属用例，故障隔离回归改用 S05 失败场景，采集器与 hub 改为反向断言。真实数据库验证：三表已删、ENUM 实测收窄、21735 行被移除指标数据清除。ruff／mypy／pytest 110 passed，前端 18 项测试与构建通过。需求正文更新为 0.46，新增「已移除的能力」小节 |
 | 2026-09-22 | 0.67 | 修复 K 线共用链路：独立回填重试与近期校对、历史和实时缓存隔离、闭合版本防回退、前端历史重新同步及报价精度、纽约日线完整性和 DST 重复时间去重。四个股票永续的成交价／标记价抽查窗口缺口与未闭合旧线均归零；后端 120、前端单元 22、浏览器 16 项通过（含各蜡烛周期像素高度核对）。需求仍为 0.46，补录局部验证；未登录真实用户浏览器、不伪造市场跳空。 |
+| 2026-09-22 | 0.68 | 用户指令“去掉M11的前后端实现。将S04的展示位置上移，使与M01在同一行”。移除 M11（标记价格 K 线）：后端删除频道订阅／回填方法／`candle:mark:*` 实时频道，`candles.kind` 的 MySQL ENUM 收窄为仅 `trade`（新迁移 `ad4f1b5392f5`）；前端删除 `MarkPriceChart` 及相关 `kind='mark'` 分支。顺带补齐上一轮 M16 移除遗漏的删表迁移（`m16_risk_events` 曾是孤儿表，新迁移 `75fd54ac1bfe`）及需求正文中残留的“M16 在用”表述。S04 从 `M25Panel` 拆出为独立 `S04Chart`（自带周期选择器），移至 `product-panel-row` 与 `TickerCard`（M01）同一行；`M25Panel` 本体只剩 S01／S05。顺带修复 0.66 遗留的前端测试回归：`detailDisplay.test.ts` 断言的 M16 字段标签早被清空却未重新跑测试；核实 `DetailFields.tsx` 组件的唯一调用方是已删除的 `RiskEventsPanel.tsx`，一并删除该孤儿组件。ruff／mypy／pytest 110 passed，前端单元 22、浏览器 14 项通过，构建通过；未针对远程 MySQL 执行迁移、未登录真实浏览器验收（本环境无远程数据库／Redis／OKX 凭证）。需求正文更新为 0.47，「已移除的能力」新增 M11／M16 两行。 |

@@ -79,8 +79,10 @@ function StatLineChart({
   )
 }
 
-/** S04 主动买卖量：需要单位选择器（0 币/1 合约/2 U），持久化每个产品最近一次选择。 */
-function S04Chart({ instId, period }: { instId: string; period: string }) {
+/** S04 主动买卖量：需要单位选择器（0 币/1 合约/2 U），持久化每个产品最近一次选择。
+ * 展示位置与 M01（Ticker）同一行，因此自带周期选择器，不依赖 M25Panel 的 period 状态。 */
+export function S04Chart({ instId }: { instId: string }) {
+  const [period, setPeriod] = useState<M25Period>('5m')
   const [unit, setUnit] = useState<S04Unit>('1')
   const [items, setItems] = useState<M25StatItem[]>([])
 
@@ -104,28 +106,34 @@ function S04Chart({ instId, period }: { instId: string; period: string }) {
   const latest = items.at(-1)
 
   return (
-    <div className="m25-stat">
-      <div className="m25-stat-header">
-        <h4>S04 · 主动买卖量</h4>
-        <div className="unit-selector">
-          {S04_UNITS.map((u) => (
-            <button key={u.value} className={u.value === unit ? 'active' : ''} onClick={() => handleUnitChange(u.value)}>
-              {u.label}
-            </button>
+    <section className="panel numeric-card">
+      <div className="panel-heading">
+        <h3>S04 · 主动买卖量</h3>
+        <div className="bar-selector">
+          {S01_S04_S05_PERIODS.map((p) => (
+            <button key={p} className={p === period ? 'active' : ''} onClick={() => setPeriod(p)}>{p}</button>
           ))}
         </div>
       </div>
+      <div className="unit-selector">
+        {S04_UNITS.map((u) => (
+          <button key={u.value} className={u.value === unit ? 'active' : ''} onClick={() => handleUnitChange(u.value)}>
+            {u.label}
+          </button>
+        ))}
+      </div>
+      {period === '1D' && <p className="bar-hint">日线按纽约自然日（00:00 ET）划分</p>}
       {latest ? (
         <div className="m25-stat-grid">
           <div>买入量：{String(latest.buyVol)}</div>
           <div>卖出量：{String(latest.sellVol)}</div>
         </div>
       ) : <p className="empty-hint">暂无数据</p>}
-    </div>
+    </section>
   )
 }
 
-/** M25 补充统计面板：S01/S04/S05，均按该永续产品的 instId 查询。 */
+/** M25 补充统计面板：S01/S05，均按该永续产品的 instId 查询（S04 见 S04Chart）。 */
 export function M25Panel({ instId }: { instId: string }) {
   const [period, setPeriod] = useState<M25Period>('5m')
 
@@ -139,10 +147,10 @@ export function M25Panel({ instId }: { instId: string }) {
           ))}
         </div>
       </div>
-      {/* S01/S05 的 1D 取纽约自然日 00:00 的读数，S04 是当日累计量；见后端 ny_day.py。 */}
+      {/* S01/S05 的 1D 取纽约自然日 00:00 的读数；见后端 ny_day.py。S04 已上移至与 M01
+          同一行的 S04Chart（见 ProductPanel.tsx），自带独立周期选择器。 */}
       {period === '1D' && <p className="bar-hint">日线按纽约自然日（00:00 ET）划分</p>}
       <StatLineChart title="S01 · 多空持仓人数比" queryKey={instId} metric="S01" period={period} valueKey="longShortAcctRatio" />
-      <S04Chart instId={instId} period={period} />
       <StatLineChart title="S05 · 持仓量历史" queryKey={instId} metric="S05" period={period} valueKey="oi" />
     </section>
   )

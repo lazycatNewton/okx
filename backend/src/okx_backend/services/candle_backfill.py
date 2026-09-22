@@ -8,11 +8,7 @@ from weakref import WeakKeyDictionary
 
 from loguru import logger
 
-from okx_backend.collector.market_collector import (
-    MARK_SOURCE_BARS,
-    TRADE_SOURCE_BARS,
-    MarketCollector,
-)
+from okx_backend.collector.market_collector import TRADE_SOURCE_BARS, MarketCollector
 from okx_backend.db.models import CandleKind
 from okx_backend.okx_client.rest import OkxRestClient
 from okx_backend.services.candle_policy import candle_cutoff_ms, is_count_limited_bar
@@ -28,7 +24,7 @@ async def _request_slot() -> None:
     loop = asyncio.get_running_loop()
     lock = _request_locks.setdefault(loop, asyncio.Lock())
     async with lock:
-        # M02/M11 各自 20 次/2s/IP；统一每 0.12s 放行一个请求更保守。
+        # M02 是 20 次/2s/IP；统一每 0.12s 放行一个请求更保守。
         await asyncio.sleep(0.12)
 
 
@@ -49,15 +45,12 @@ async def backfill_candles(products: list[tuple[str, str]], collector: MarketCol
     async with OkxRestClient() as client:
         async with asyncio.TaskGroup() as tasks:
             for bar in backfill_plan(TRADE_SOURCE_BARS):
-                for inst_id, inst_type in products:
-                    kinds = [CandleKind.TRADE]
-                    if inst_type == "SWAP" and bar in MARK_SOURCE_BARS:
-                        kinds.append(CandleKind.MARK)
-                    for kind in kinds:
-                        tasks.create_task(
-                            _retry_full_history(client, collector, inst_id, kind, bar)
-                        )
-                        tasks.create_task(_reconcile_recent(client, collector, inst_id, kind, bar))
+                for inst_id, _inst_type in products:
+                    kind = CandleKind.TRADE
+                    tasks.create_task(
+                        _retry_full_history(client, collector, inst_id, kind, bar)
+                    )
+                    tasks.create_task(_reconcile_recent(client, collector, inst_id, kind, bar))
 
 
 async def _retry_full_history(
@@ -106,15 +99,11 @@ async def _backfill_one(
     after: str | None = None
     saved = 0
     is_ny_day_source = bar == NY_DAY_SOURCE_BAR
-    page_limit = 300 if kind == CandleKind.TRADE else 100
+    page_limit = 300
     while True:
         await _request_slot()
-        rows = await (
-            client.get_history_candles(
-                inst_id, bar, after=after, limit=page_limit, adjust="forward"
-            )
-            if kind == CandleKind.TRADE
-            else client.get_history_mark_price_candles(inst_id, bar, after=after, limit=page_limit)
+        rows = await client.get_history_candles(
+            inst_id, bar, after=after, limit=page_limit, adjust="forward"
         )
         if not rows:
             break

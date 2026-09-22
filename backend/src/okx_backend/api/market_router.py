@@ -16,17 +16,16 @@ router = APIRouter(prefix="/api/market", tags=["market"])
 @router.get("/{inst_id}/candles")
 async def get_candles(
     inst_id: str = Path(...),
-    kind: str = Query(default="trade", pattern="^(trade|mark)$"),
+    kind: str = Query(default="trade", pattern="^trade$"),
     bar: str = Query(...),
     before: int | None = Query(default=None),
     limit: int = Query(default=300, le=300),
     _session: SessionData = Depends(get_current_session),
 ) -> dict:
-    candle_kind = CandleKind.TRADE if kind == "trade" else CandleKind.MARK
     async with session_scope() as session:
         stmt = (
             select(Candle)
-            .where(Candle.inst_id == inst_id, Candle.kind == candle_kind, Candle.bar == bar)
+            .where(Candle.inst_id == inst_id, Candle.kind == CandleKind.TRADE, Candle.bar == bar)
             .order_by(Candle.ts_ms.desc())
             .limit(limit)
         )

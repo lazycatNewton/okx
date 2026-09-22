@@ -4,7 +4,7 @@ import { candleWindowMs, mergeCandles } from './candleData'
 import type { CandleItem, TradeBar } from './types'
 
 // 调用方按 instId/kind/bar 设置组件 key：每个数据集拥有独立状态和请求生命周期。
-export function useCandleData(instId: string, kind: 'trade' | 'mark', bar: TradeBar, live: CandleItem | null) {
+export function useCandleData(instId: string, kind: 'trade', bar: TradeBar, live: CandleItem | null) {
   const [items, setItems] = useState<CandleItem[]>([])
   const [loading, setLoading] = useState(true)
   const bufferedLive = useRef(new Map<number, CandleItem>())

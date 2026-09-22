@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { CandleChart, MarkPriceChart } from '../../src/components/CandleChart'
+import { CandleChart } from '../../src/components/CandleChart'
 import { chartTimeInEt } from '../../src/time'
 import { computeChanOverlay } from '../../src/chanOverlay'
 import '../../src/App.css'
@@ -23,15 +23,13 @@ window.captureChart = (create, element, options) => {
 }
 window.chartTimeInEt = chartTimeInEt
 window.expectedOverlay = items => computeChanOverlay(items.map(item => ({ ...item, time: chartTimeInEt(item.ts) })))
-const kind = new URLSearchParams(location.search).get('kind') ?? 'trade'
-const Chart = kind === 'mark' ? MarkPriceChart : CandleChart
 const root = createRoot(document.getElementById('root'))
 let props = { instId: 'FIRST-USDT', realtime: { candles: {} } }
 window.renderChart = patch => {
   props = { ...props, ...patch }
-  root.render(<StrictMode><Chart {...props} /></StrictMode>)
+  root.render(<StrictMode><CandleChart {...props} /></StrictMode>)
 }
 window.pushCandle = (bar, candle) => window.renderChart({
-  realtime: { candles: { [`candle:${kind}:${bar}`]: { data: candle } } },
+  realtime: { candles: { [`candle:trade:${bar}`]: { data: candle } } },
 })
 window.renderChart({})

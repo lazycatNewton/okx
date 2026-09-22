@@ -171,13 +171,12 @@ class TickerSnapshot(Base, _SiteMixin):
 
 
 # ---------------------------------------------------------------------------
-# M02 / M11 K 线（成交价 / 标记价格，7 天，按 instId+kind+bar+ts 去重）
+# M02 K 线（成交价，7 天，按 instId+kind+bar+ts 去重）
 # ---------------------------------------------------------------------------
 
 
 class CandleKind(enum.StrEnum):
     TRADE = "trade"  # M02
-    MARK = "mark"  # M11
 
 
 class Candle(Base, _SiteMixin):

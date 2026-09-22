@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { formatDecimal, detailLabel, detailValue } from '../src/detailDisplay.ts'
+import { formatDecimal, detailValue } from '../src/detailDisplay.ts'
 
 test('decimal display rounds exactly and preserves large integer precision', () => {
   assert.equal(formatDecimal('9007199254740993.125'), '9007199254740993.13')
@@ -17,11 +17,8 @@ test('rates display as percentages with two decimals', () => {
 test('missing and invalid numbers never display misleading zero', () => {
   for (const value of [null, undefined, '', 'NaN', 'abc']) assert.equal(formatDecimal(value), '—')
 })
-test('detail labels and enum values are understandable Chinese', () => {
-  assert.equal(detailLabel('bkPx'), '强平标记价格')
-  assert.equal(detailValue('settState', 'settled'), '已结算')
+test('instType enum values are understandable Chinese', () => {
   assert.equal(detailValue('instType', 'SWAP'), '永续合约')
-  assert.equal(detailValue('enabled', false), '未启用')
-  assert.equal(detailValue('state', 'new_state'), '未知状态（new_state）')
-  assert.equal(detailValue('bkLoss', ''), '—')
+  assert.equal(detailValue('instType', 'new_type'), '未知状态（new_type）')
+  assert.equal(detailValue('instType', ''), '—')
 })
