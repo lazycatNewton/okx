@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ColorType, createChart, LineSeries, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts'
 import { getM25Stat, getS04Unit, setS04Unit } from '../api'
+import { formatDecimal } from '../detailDisplay'
 import { chartTimeInEt, formatChartTick, formatChartTime } from '../time'
 import type { M25Period, M25StatItem, S04Unit } from '../types'
 
@@ -125,8 +126,8 @@ export function S04Chart({ instId }: { instId: string }) {
       {period === '1D' && <p className="bar-hint">日线按纽约自然日（00:00 ET）划分</p>}
       {latest ? (
         <div className="m25-stat-grid">
-          <div>买入量：{String(latest.buyVol)}</div>
-          <div>卖出量：{String(latest.sellVol)}</div>
+          <div>买入量：{formatDecimal(latest.buyVol)}</div>
+          <div>卖出量：{formatDecimal(latest.sellVol)}</div>
         </div>
       ) : <p className="empty-hint">暂无数据</p>}
     </section>
