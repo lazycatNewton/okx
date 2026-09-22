@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { nextActiveProduct } from './productNavigation'
-import { getBootstrap, logout, updateSelection } from './api'
+import { getBootstrap, updateSelection } from './api'
 import { AuxSidebar } from './components/AuxSidebar'
-import { LoginScreen } from './components/LoginScreen'
 import { ProductPanel } from './components/ProductPanel'
 import { ProductSelector } from './components/ProductSelector'
 import { ProductSidebar } from './components/ProductSidebar'
@@ -11,7 +10,6 @@ import type { EconomicCalendarItem, EventContractMarketItem } from './types'
 import './App.css'
 
 export default function App() {
-  const [username, setUsername] = useState<string | null>(null)
   const [selectedInstIds, setSelectedInstIds] = useState<string[]>([])
   const [activeInstId, setActiveInstId] = useState<string | null>(null)
   const [selectorOpen, setSelectorOpen] = useState(false)
@@ -29,42 +27,20 @@ export default function App() {
   )
 
   useEffect(() => {
-    // 尝试用已有会话 Cookie 直接恢复（登录后再刷新页面场景）。
     getBootstrap()
       .then((res) => {
-        setUsername(res.username)
         setSelectedInstIds(res.selectedInstIds)
         setActiveInstId(res.lastActiveInstId)
         setInitialEventContractMarkets(res.auxSidebar.eventContractMarkets)
         setInitialEconomicCalendar(res.auxSidebar.economicCalendar)
       })
-      .catch(() => {
-        // 未登录：留在登录页
-      })
       .finally(() => setBootstrapped(true))
   }, [])
 
   useEffect(() => {
-    if (!username) return
     marketDataStore.connect()
     return () => marketDataStore.disconnect()
-  }, [username])
-
-  async function handleLoggedIn(name: string) {
-    setUsername(name)
-    const res = await getBootstrap()
-    setSelectedInstIds(res.selectedInstIds)
-    setActiveInstId(res.lastActiveInstId)
-    setInitialEventContractMarkets(res.auxSidebar.eventContractMarkets)
-    setInitialEconomicCalendar(res.auxSidebar.economicCalendar)
-  }
-
-  async function handleLogout() {
-    await logout()
-    setUsername(null)
-    setSelectedInstIds([])
-    setActiveInstId(null)
-  }
+  }, [])
 
   function handleSelectionChange(instIds: string[]) {
     setSelectedInstIds(instIds)
@@ -89,7 +65,6 @@ export default function App() {
   }
 
   if (!bootstrapped) return null
-  if (!username) return <LoginScreen onLoggedIn={handleLoggedIn} />
 
   return (
     <div className="app-shell">
@@ -100,8 +75,6 @@ export default function App() {
         </div>
         <div className="app-header-right">
           <button onClick={() => setAuxSidebarOpen(true)}>市场/日历</button>
-          <span>{username}</span>
-          <button onClick={handleLogout}>退出</button>
         </div>
       </header>
       <button

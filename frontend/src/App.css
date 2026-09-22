@@ -9,52 +9,6 @@ body {
   color: #e6e6e6;
 }
 
-.login-screen {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
-}
-
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 320px;
-  padding: 24px;
-  background: #1a1d24;
-  border-radius: 8px;
-}
-
-.login-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 14px;
-}
-
-.login-form input {
-  padding: 8px;
-  border-radius: 4px;
-  border: 1px solid #333;
-  background: #0f1115;
-  color: #e6e6e6;
-}
-
-.login-form button {
-  padding: 10px;
-  border-radius: 4px;
-  border: none;
-  background: #3b82f6;
-  color: white;
-  cursor: pointer;
-}
-
-.login-error {
-  color: #f87171;
-  font-size: 13px;
-}
-
 .app-shell {
   --product-sidebar-width: 260px;
   display: flex;

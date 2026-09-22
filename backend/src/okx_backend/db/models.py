@@ -49,31 +49,17 @@ class _SiteMixin:
 
 
 # ---------------------------------------------------------------------------
-# 账户与会话（okx-requirements.md “前端形态与使用范围”）
+# 应用偏好（无登录，单例配置；见 okx-requirements.md “前端形态与使用范围”）
 # ---------------------------------------------------------------------------
 
 
-class User(Base):
-    """唯一应用使用者账户。控制台创建流程不在本期范围，这里只提供数据结构与登录校验。"""
+class AppPreference(Base):
+    """单例应用偏好：上次活动 Tab。只有一行，主键固定为 1。产品选择顺序在
+    SubscriptionConfigVersion 中。"""
 
-    __tablename__ = "users"
+    __tablename__ = "app_preferences"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    username: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-
-class UserPreference(Base):
-    """唯一用户的会话恢复偏好：上次活动 Tab。产品选择顺序在 SubscriptionConfigVersion 中。"""
-
-    __tablename__ = "user_preferences"
-
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id"), primary_key=True
-    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     last_active_inst_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -116,12 +102,11 @@ class InstrumentCatalogVersion(Base):
 
 
 class SubscriptionConfigVersion(Base):
-    """产品选择的有序 instId 列表版本。当前有效配置单独标记，历史版本保留。"""
+    """产品选择的有序 instId 列表版本（单例全局配置）。当前有效配置单独标记，历史版本保留。"""
 
     __tablename__ = "subscription_config_versions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     ordered_inst_ids: Mapped[list] = mapped_column(JSON, nullable=False)  # 有序 instId 列表
     is_current: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(

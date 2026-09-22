@@ -1,12 +1,10 @@
-"""PUT /api/subscriptions/products — 更新用户的永久产品选择。"""
+"""PUT /api/subscriptions/products — 更新全局产品选择（单例配置，无登录）。"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
 
-from okx_backend.api.deps import get_current_session
-from okx_backend.auth.session import SessionData
 from okx_backend.collector.market_collector import get_collector
 from okx_backend.services import selection_data_runtime
 from okx_backend.services.subscriptions import list_live_selected_full, set_selection
@@ -19,12 +17,10 @@ class UpdateSelectionRequest(BaseModel):
 
 
 @router.put("/products")
-async def update_selection(
-    payload: UpdateSelectionRequest, session: SessionData = Depends(get_current_session)
-) -> dict:
-    result = await set_selection(session.user_id, payload.instIds)
+async def update_selection(payload: UpdateSelectionRequest) -> dict:
+    result = await set_selection(payload.instIds)
     # 已选且 live 的产品持续采集；此处按最新选择重算 desired 订阅集合（不依赖任何浏览器 Tab 状态）。
-    live_products = await list_live_selected_full(session.user_id)
+    live_products = await list_live_selected_full()
     collector = get_collector()
     collector.apply_selected_products(live_products)
     # 产品运行期新增时，立即启动对应 K 线/M25 历史回填与 M25 周期轮询；

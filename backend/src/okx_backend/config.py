@@ -91,14 +91,6 @@ class Settings(BaseSettings):
     okx_api_secret: str | None = Field(default=None)
     okx_api_passphrase: str | None = Field(default=None)
 
-    # --- 会话（本产品自身登录，不使用 OKX 凭证）---
-    session_cookie_name: str = Field(default="okx_app_session")
-    session_ttl_seconds: int = Field(default=60 * 60 * 24 * 30)  # Redis 会话记录 TTL 上限；
-    # 实际失效以“关闭浏览器 / 主动退出 / 新浏览器登录挤出旧会话”为准，此 TTL 只防止 Redis 中出现
-    # 永不清理的孤儿会话，不代表会话有固定过期时间（需求未确认空闲超时）。
-    login_lockout_threshold: int = Field(default=5)
-    login_lockout_seconds: int = Field(default=15 * 60)
-
     # --- 数据保留 ---
     retention_days: int = Field(default=7)
 

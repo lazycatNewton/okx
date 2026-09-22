@@ -4,7 +4,7 @@
 - 客户端消息：{"type": "activate-product"|"deactivate-product", "instId": "..."}
 - 服务端消息：{"type", "instId", "channel", "data", "sourceTs", "receivedAt"}
   type in {snapshot, update, empty}。
-鉴权：复用会话 Cookie（WebSocket 握手阶段读取）。
+无登录：不做鉴权，直接接受连接。
 """
 
 from __future__ import annotations
@@ -15,10 +15,7 @@ from collections.abc import Coroutine
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from loguru import logger
 
-from okx_backend.api.deps import get_current_session
-from okx_backend.config import get_settings
 from okx_backend.realtime.hub import BrowserConnection, RealtimeHub, get_hub
 
 router = APIRouter()
@@ -85,15 +82,6 @@ async def _send_loop(websocket: WebSocket, conn: BrowserConnection) -> None:
 
 @router.websocket("/ws/app")
 async def ws_app(websocket: WebSocket) -> None:
-    settings = get_settings()
-    session_id = websocket.cookies.get(settings.session_cookie_name)
-    try:
-        await get_current_session(session_id)
-    except Exception as exc:  # noqa: BLE001 - 握手阶段拒绝未授权连接前先记录原因，便于排查
-        logger.warning(f"ws_app rejected: cookie={session_id!r} error={exc!r}")
-        await websocket.close(code=4401)
-        return
-
     await websocket.accept()
     hub = get_hub()
     conn = hub.register()

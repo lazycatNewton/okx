@@ -1,4 +1,4 @@
-// HTTP API 客户端：所有请求携带会话 Cookie（credentials: 'include'）。
+// HTTP API 客户端：无登录，直接访问本产品后端。
 import type {
   BootstrapResponse,
   CandleItem,
@@ -20,7 +20,6 @@ class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(path, {
     ...init,
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),
@@ -41,17 +40,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export { ApiError }
-
-export function login(username: string, password: string): Promise<{ username: string }> {
-  return request('/api/session/login', {
-    method: 'POST',
-    body: JSON.stringify({ username, password }),
-  })
-}
-
-export function logout(): Promise<{ ok: boolean }> {
-  return request('/api/session', { method: 'DELETE' })
-}
 
 export function getBootstrap(): Promise<BootstrapResponse> {
   return request('/api/bootstrap')

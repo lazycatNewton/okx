@@ -10,10 +10,8 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
-from okx_backend.api.deps import get_current_session
-from okx_backend.auth.session import SessionData
 from okx_backend.services.economic_calendar import list_economic_calendar
 from okx_backend.services.event_contract_catalog import list_event_contract_markets
 
@@ -23,10 +21,7 @@ PAGE_SIZE = 50
 
 
 @router.get("/event-contract-markets")
-async def get_event_contract_markets(
-    cursor: str | None = Query(default=None),
-    _session: SessionData = Depends(get_current_session),
-) -> dict:
+async def get_event_contract_markets(cursor: str | None = Query(default=None)) -> dict:
     before_exp_time = int(cursor) if cursor is not None else None
     rows, has_more = await list_event_contract_markets(before_exp_time, limit=PAGE_SIZE)
     next_cursor = str(rows[-1].exp_time) if rows and has_more else None
@@ -56,10 +51,7 @@ async def get_event_contract_markets(
 
 
 @router.get("/economic-calendar")
-async def get_economic_calendar_sidebar(
-    cursor: str | None = Query(default=None),
-    _session: SessionData = Depends(get_current_session),
-) -> dict:
+async def get_economic_calendar_sidebar(cursor: str | None = Query(default=None)) -> dict:
     before_date = int(cursor) if cursor is not None else None
     rows, has_more = await list_economic_calendar(before_date, limit=PAGE_SIZE)
     next_cursor = str(rows[-1].date) if rows and has_more and rows[-1].date is not None else None

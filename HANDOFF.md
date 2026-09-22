@@ -1,6 +1,6 @@
 # HANDOFF — OKX 需求完善交接
 
-更新日期：2026-09-22 · 当前对应需求版本：0.47
+更新日期：2026-09-22 · 当前对应需求版本：0.48
 
 ## 1. 接手时先读
 
@@ -16,6 +16,21 @@
 本轮再次确认：在后续完善 `okx-requirements.md` 的每次有效工作结束前，均须同步本文件的恢复点、待定事项、下一步和变更记录；这不代表后台自动更新，需由后续实际工作触发。
 
 ## 2. 当前进度与恢复点
+
+### 0.69 移除登录系统（2026-09-22）
+
+用户指令「去掉登录系统的前后端实现」。这是 REQ-001「前端形态与使用范围」原先确认功能的**范围收缩**：登录、会话 Cookie、密码哈希、登录失败冻结整体退出，不是某个 M/S 编号能力，因此不进「已移除的能力」的编号表格，而是单独一段记录。需求正文更新为 **0.48**。
+
+**后端**：
+
+- 删除 `api/auth_router.py`（`POST /api/session/login`／`DELETE /api/session`）、`auth/session.py`（Redis 会话管理、登录失败冻结）、`security.py`（`argon2` 密码哈希、用户名/密码规则校验、初始密码生成）、`api/deps.py`（`get_current_session` FastAPI 依赖）；`tests/test_security.py` 一并删除。
+- 全部路由（`bootstrap_router.py`／`products_router.py`／`subscriptions_router.py`／`market_router.py`／`m25_router.py`／`aux_router.py`）删除 `Depends(get_current_session)`／`SessionData` 参数，不再做鉴权；`ws_app_router.py` 的 `/ws/app` 握手不再读取会话 Cookie，直接 `accept()`。
+- **数据模型收窄**：`db/models.py` 删除 `User`；`UserPreference` 重命名为 `AppPreference`，从按 `user_id` 归属改为单例（主键固定为 `id=1`）；`SubscriptionConfigVersion` 删除 `user_id` 列，收窄为单例全局配置。`services/subscriptions.py` 的 `get_current_selection()`／`set_selection()`／`list_live_selected_full()`／`list_live_selected_with_type()` 全部去掉 `user_id` 参数。`main.py` 的 `lifespan` 不再在启动时遍历 `users` 表逐个恢复采集，直接调用一次 `list_live_selected_full()`。`config.py` 删除 `session_cookie_name`／`session_ttl_seconds`／`login_lockout_threshold`／`login_lockout_seconds` 四个设置项。`pyproject.toml` 删除 `argon2-cffi`（唯一调用方已删除），`uv lock` 重新生成。
+- 新迁移 `86fae8b0e48c`：先用 `information_schema` 动态查找并删除 `subscription_config_versions`／`user_preferences` 指向 `users` 的外键（未显式命名，MySQL 自动生成的约束名依环境而定，不能硬编码），再删 `subscription_config_versions.user_id` 列；`user_preferences` 单例化（只保留最近更新的一行、去掉旧主键 `user_id`、加固定为 `1` 的新主键 `id`）后 `rename_table` 为 `app_preferences`；最后 `drop_table('users')`。`downgrade()` 能重建三张表结构与外键，但不恢复账户数据（`users` 从未有过真正的创建流程，谈不上恢复）。
+
+**前端**：删除 `components/LoginScreen.tsx`；`App.tsx` 去掉 `username` 状态、登录门禁（`if (!username) return <LoginScreen/>`）、`handleLoggedIn`／`handleLogout`，`bootstrap()` 成功即直接渲染主界面，header 不再显示用户名和退出按钮；`api.ts` 删除 `login()`／`logout()`，`request()` 去掉现已无意义的 `credentials: 'include'`；`types.ts` 的 `BootstrapResponse` 删除 `username` 字段；`App.css` 删除 `.login-screen`／`.login-form`／`.login-error` 样式。
+
+**验证**：后端 ruff／mypy／pytest **107 passed**（`test_security.py` 的 3 项随文件删除，其余无回归）；前端 `npm test` **22 passed**、`tsc -b && vite build`、`oxlint`（仅既有 `ProductSelector.tsx` 警告）均通过；`alembic heads` 确认迁移链单一 head。**未做**：未针对真实远程 MySQL 执行本轮迁移，未登录（现在也没有登录可言）真实浏览器验收——本环境无远程 MySQL／Redis／OKX 凭证。**需要用户知晓的行为变化**：这不只是删掉一个页面，而是**移除了整个应用层访问控制**——部署后任何能访问该服务网络地址的人都可以查看和修改产品选择、触发数据采集范围变化。若需要访问控制，需由部署层（网络边界、反向代理鉴权等）承担，不在本产品应用层实现；这与用户"单人自用"的既有确认前提一致，但原先至少有一层登录，现在完全没有。
 
 ### 0.68 移除 M11／补齐遗漏的 M16 迁移／S04 展示位置上移（2026-09-22）
 
@@ -210,7 +225,7 @@ Nacos 远程配置的实际 Data ID、Group 和 YAML 字段结构（`backend/src
 
 ## 4. 下一步顺序
 
-当前实现恢复点以 0.68 为准：M11 移除、M16 迁移补齐、S04 展示位置上移均已完成代码与自动回归，尚未登录真实用户浏览器目视验收（本环境无远程 MySQL／Redis／OKX 凭证）。以下为原需求阶段的后续备忘，不得用它撤销已经获授权的实现或重复询问已确认事项。
+当前实现恢复点以 0.69 为准：登录系统移除、M11 移除、M16 迁移补齐、S04 展示位置上移均已完成代码与自动回归，尚未针对真实远程数据库执行最新迁移、尚未真实浏览器目视验收（本环境无远程 MySQL／Redis／OKX 凭证）。以下为原需求阶段的后续备忘，不得用它撤销已经获授权的实现或重复询问已确认事项。
 
 1. 逐接口核验仍在范围内的 M10、M13、M22、M23 和 M25（S01／S04／S05）的参数、站点支持、分页、限速与响应字段；解决 REST 基地址资料冲突。M11、M16 已由用户指令移除，不再需要核验。
 2. 将接口契约补为可验证的操作案例，统一需求、交接和版本历史表述。
@@ -226,17 +241,17 @@ Nacos 远程配置的实际 Data ID、Group 和 YAML 字段结构（`backend/src
 - 已核验 M22 的数据层级：预测市场**系列**（`seriesId`、`title`、`category`、`freq`、结算方式／标的）→ 某系列的**事件**（`eventId`、到期时间、状态）→ 某事件的**市场**（`instId`、行权区间、状态、结果／结算值）。系列、事件、市场分别由 `GET /api/v5/public/event-contract/series`、`/events`、`/markets` 获取；均仅全球站支持、各限速 10 次／2 秒／IP。M22 WS 的 `event-contract-markets` 只能以 `instType=EVENTS` 订阅所有事件合约市场状态更新及 floorStrike 生成，不推初始快照，也没有按 `seriesId`／`eventId` 过滤的订阅参数。
 - H02 已确认：保留全部自动发现的预测市场，不按分类、系列、事件或状态过滤；以上三个 REST 接口提供初始完整层级，M22 WS 提供后续市场更新。需求正文已记录保存字段与调用顺序。
 - H03 已确认：产品／订阅目录永久保存；其余对象采用逐对象定义的去重时间序列、每秒快照、状态修订或追加事件形式，并按业务时间滚动保留 7 天。首次启动先恢复并刷新目录，再以历史 K 线与 M25 接口尽量回填，未能回填的数据从 WS 首次成功接收起积累，启动前缺口必须保留。
-- H04 已确认：单人自用桌面 Web 必须使用本产品自身登录；该认证不使用 OKX API 凭证。登录机制的具体选择拆分为 H06。
+- H04 已确认（**2026-09-22 起该功能已由用户指令整体移除，见 0.69**）：单人自用桌面 Web 必须使用本产品自身登录；该认证不使用 OKX API 凭证。登录机制的具体选择拆分为 H06。
 - M05 已选 books5，不应把旧 400 档增量重建方案当作本期要求；M06 已移除。
 - M16 仅 SWAP；公共强平数据不能代表总强平量。M22 是独立辅助事件合约数据。
 - M23 是本期已知需鉴权的频道，文档门槛 VIP1；未达门槛、未配置凭证、鉴权失败或网络故障时返回空均为用户确认的应用行为，不是交易所原生成功响应。
 - H05 已确认：M23 未配置凭证、鉴权失败、网络故障和未达 VIP1 时，前端一律返回空数据集，不暴露错误详情，也不影响其他行情频道。
-- H06 已确认：使用用户名密码登录，密码仅保存带盐的单向安全哈希，不使用 OKX API 凭证。
-- H08 已确认：不提供自助注册；最高权限控制台创建唯一应用账户，用户名重复即失败，用户名非空、仅小写字母且最长 10 字符，初始随机密码不超过 18 个字符并包含大小写字母、数字和特殊字符。最高权限控制台初始化和密码恢复不在本期范围。
-- H09 已确认：最高权限控制台只能创建唯一一个应用使用者账户，不扩展为多用户。
+- H06 已确认（**2026-09-22 起已移除，见 0.69**）：使用用户名密码登录，密码仅保存带盐的单向安全哈希，不使用 OKX API 凭证。
+- H08 已确认（**2026-09-22 起已移除，见 0.69**）：不提供自助注册；最高权限控制台创建唯一应用账户，用户名重复即失败，用户名非空、仅小写字母且最长 10 字符，初始随机密码不超过 18 个字符并包含大小写字母、数字和特殊字符。最高权限控制台初始化和密码恢复不在本期范围。
+- H09 已确认（**2026-09-22 起已移除，见 0.69**）：最高权限控制台只能创建唯一一个应用使用者账户，不扩展为多用户。
 - H10 已确认：每个 Tab 对应一个用户选择的 OKX 产品，Tab 内包含 K 线与该产品适用的全部已选数据面板；K 线不再独立成 Tab。M22／M23 在独立全局侧边栏展示；第一版不裁剪面板，修改留待后续迭代。
 - 第一版产品视图已补充：选择／取消选择产品立即创建／关闭 Tab；未选产品显示空白；K 线默认 `5m` 最近 2 小时且可切换已选周期；各类面板使用组合展示；M22／M23 按时间倒序；数据缺口不向前端标注。初始密码交付不在本期范围。
-- H07 已确认：产品选择与订阅配置永久作为唯一用户的全局配置保存；关闭浏览器、会话结束和退出不改变配置，主动修改保留版本记录。
+- H07 已确认（**2026-09-22 起「唯一用户」改为无用户的单例全局配置，见 0.69**）：产品选择与订阅配置永久作为唯一用户的全局配置保存；关闭浏览器、会话结束和退出不改变配置，主动修改保留版本记录。
 - 比例类指标不可未经确认自行聚合。
 - S01／S04 的部分原文 instId 示例形如 BTC-USDT，虽标适用永续／交割，具体合法标识须再交叉核对，不能只凭样例去掉 SWAP 后缀。
 - M25 S04 已确认提供 `unit` 选择器：`0` 为币、`1` 为合约、`2` 为 U，首次打开默认 `1`。三个单位分别查询、保存和展示，不做前端换算。
@@ -402,3 +417,5 @@ Skill 查询：先读取 SKILL.md 与 sites.json 检查兼容性；按模块索�
 | 2026-09-22 | 0.66 | 用户指令“去掉前后端关于 M12/M14/M15/S09/S10/S11 的实现”，属范围收缩。后端退订 `funding-rate`／`price-limit`／`estimated-price` 并删除对应落库方法、hub 频道、三个 REST 方法（loan-ratio／funding-rate-history／premium-history）、S09/S10/S11 的回填与轮询、`backfill_dict_metric`、`ccy_from_uly`／`_resolve_ccy_set`（M25 不再需要 `uly`→`ccy` 派生，全部指标改以永续 instId 查询）、保留清理条目与三个 ORM 模型；`M25Metric` 收窄为 S01/S04/S05。迁移 `c93b5ad10e77` 删除 S09/S10/S11 历史行、收窄 MySQL ENUM、drop `m12_funding_rates`／`m14_price_limits`／`m15_estimated_prices`。前端删除三个数据类型、三个 channel 状态、三张快照卡片、S09 图表与 S10/S11 表格及失效样式。测试删除专属用例，故障隔离回归改用 S05 失败场景，采集器与 hub 改为反向断言。真实数据库验证：三表已删、ENUM 实测收窄、21735 行被移除指标数据清除。ruff／mypy／pytest 110 passed，前端 18 项测试与构建通过。需求正文更新为 0.46，新增「已移除的能力」小节 |
 | 2026-09-22 | 0.67 | 修复 K 线共用链路：独立回填重试与近期校对、历史和实时缓存隔离、闭合版本防回退、前端历史重新同步及报价精度、纽约日线完整性和 DST 重复时间去重。四个股票永续的成交价／标记价抽查窗口缺口与未闭合旧线均归零；后端 120、前端单元 22、浏览器 16 项通过（含各蜡烛周期像素高度核对）。需求仍为 0.46，补录局部验证；未登录真实用户浏览器、不伪造市场跳空。 |
 | 2026-09-22 | 0.68 | 用户指令“去掉M11的前后端实现。将S04的展示位置上移，使与M01在同一行”。移除 M11（标记价格 K 线）：后端删除频道订阅／回填方法／`candle:mark:*` 实时频道，`candles.kind` 的 MySQL ENUM 收窄为仅 `trade`（新迁移 `ad4f1b5392f5`）；前端删除 `MarkPriceChart` 及相关 `kind='mark'` 分支。顺带补齐上一轮 M16 移除遗漏的删表迁移（`m16_risk_events` 曾是孤儿表，新迁移 `75fd54ac1bfe`）及需求正文中残留的“M16 在用”表述。S04 从 `M25Panel` 拆出为独立 `S04Chart`（自带周期选择器），移至 `product-panel-row` 与 `TickerCard`（M01）同一行；`M25Panel` 本体只剩 S01／S05。顺带修复 0.66 遗留的前端测试回归：`detailDisplay.test.ts` 断言的 M16 字段标签早被清空却未重新跑测试；核实 `DetailFields.tsx` 组件的唯一调用方是已删除的 `RiskEventsPanel.tsx`，一并删除该孤儿组件。ruff／mypy／pytest 110 passed，前端单元 22、浏览器 14 项通过，构建通过；未针对远程 MySQL 执行迁移、未登录真实浏览器验收（本环境无远程数据库／Redis／OKX 凭证）。需求正文更新为 0.47，「已移除的能力」新增 M11／M16 两行。 |
+| 2026-09-22 | 0.68.1 | 用户反馈“S04主动买卖量中所有的数值都保持四舍五入的两位小数”。`M25Panel.tsx` 的 `S04Chart` 改用已有的 `formatDecimal()`（十进制字符串精确四舍五入，`detailDisplay.ts` 中 TickerCard 等已在用）展示 `buyVol`／`sellVol`，不影响 S01／S05 的展示。前端单元 22 项、构建通过。需求正文与版本号未变（纯展示格式修复）。 |
+| 2026-09-22 | 0.69 | 用户指令“去掉登录系统的前后端实现”，属 REQ-001 的范围收缩（不是编号能力，单独记录）。后端删除 `auth_router.py`／`auth/session.py`／`security.py`／`api/deps.py`，全部路由去掉 `Depends(get_current_session)`，`/ws/app` 握手不再读取会话 Cookie。数据模型收窄为无用户：`db/models.py` 删除 `User`，`UserPreference`→`AppPreference` 单例化（固定主键 `id=1`），`SubscriptionConfigVersion` 删除 `user_id`；`services/subscriptions.py` 全部函数去掉 `user_id` 参数；`main.py` 不再启动时遍历 `users` 表。新迁移 `86fae8b0e48c`：用 `information_schema` 动态查找并删除两张表指向 `users` 的外键（未显式命名，约束名依环境而定，不能硬编码）、单例化 `user_preferences` 并改名 `app_preferences`、`drop_table('users')`。前端删除 `LoginScreen.tsx`，`App.tsx` 去掉登录门禁与退出按钮，`api.ts` 删除 `login()`／`logout()`，`types.ts` 的 `BootstrapResponse` 删除 `username`，`App.css` 删除登录样式。`pyproject.toml` 删除 `argon2-cffi`（唯一调用方已删除）。ruff／mypy／pytest **107 passed**（少 3 项因 `test_security.py` 随文件删除）；前端单元 **22 passed**、构建、lint 均通过；`alembic heads` 单一 head。**需要用户知晓的行为变化**：这移除了整个应用层访问控制，部署后任何能访问服务网络地址的人都可查看/修改产品选择；若需要访问控制需由部署层（网络边界、反向代理等）承担。需求正文更新为 0.48，新增登录移除记录；HANDOFF 第 5 节 H04／H06～H09 标注为已移除。未针对远程数据库执行本轮迁移、未做真实浏览器验证（本环境无远程 MySQL／Redis／OKX 凭证）。 |

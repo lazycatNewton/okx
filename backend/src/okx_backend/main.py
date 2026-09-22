@@ -8,9 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from loguru import logger
-from sqlalchemy import select
 
-from okx_backend.api.auth_router import router as auth_router
 from okx_backend.api.aux_router import router as aux_router
 from okx_backend.api.bootstrap_router import router as bootstrap_router
 from okx_backend.api.m25_router import router as m25_router
@@ -21,8 +19,7 @@ from okx_backend.api.ws_app_router import router as ws_app_router
 from okx_backend.cache import close_redis
 from okx_backend.collector.market_collector import get_collector
 from okx_backend.config import apply_remote_storage_config, get_settings
-from okx_backend.db.base import dispose_engine, session_scope
-from okx_backend.db.models import User
+from okx_backend.db.base import dispose_engine
 from okx_backend.nacos_config import fetch_remote_storage_config, load_nacos_bootstrap
 from okx_backend.services.catalog import refresh_catalog
 from okx_backend.services.economic_calendar import (
@@ -93,15 +90,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     collector = get_collector()
     collector.start()
-    async with session_scope() as session:
-        users = list((await session.scalars(select(User))).all())
-    restored_products: list[tuple[str, str]] = []
-    for user in users:
-        live_products_full = await list_live_selected_full(user.id)
-        collector.apply_selected_products(live_products_full)
-        restored_products.extend(
-            (inst_id, inst_type) for inst_id, inst_type, _ in live_products_full
-        )
+    live_products_full = await list_live_selected_full()
+    collector.apply_selected_products(live_products_full)
+    restored_products = [(inst_id, inst_type) for inst_id, inst_type, _ in live_products_full]
 
     selection_data_runtime = get_selection_data_runtime()
     await selection_data_runtime.apply_products(restored_products, collector)
@@ -141,7 +132,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="OKX 行情连接服务", lifespan=lifespan)
-    app.include_router(auth_router)
     app.include_router(bootstrap_router)
     app.include_router(products_router)
     app.include_router(subscriptions_router)

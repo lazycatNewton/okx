@@ -47,7 +47,6 @@ export interface EconomicCalendarItem {
 }
 
 export interface BootstrapResponse {
-  username: string
   selectedInstIds: string[]
   lastActiveInstId: string | null
   auxSidebar: {

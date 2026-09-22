@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Path, Query
 from sqlalchemy import select
 
-from okx_backend.api.deps import get_current_session
-from okx_backend.auth.session import SessionData
 from okx_backend.db.base import session_scope
 from okx_backend.db.models import Candle, CandleKind
 
@@ -20,7 +18,6 @@ async def get_candles(
     bar: str = Query(...),
     before: int | None = Query(default=None),
     limit: int = Query(default=300, le=300),
-    _session: SessionData = Depends(get_current_session),
 ) -> dict:
     async with session_scope() as session:
         stmt = (

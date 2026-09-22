@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
-from okx_backend.api.deps import get_current_session
-from okx_backend.auth.session import SessionData
 from okx_backend.services.catalog import list_current_instruments
 
 router = APIRouter(prefix="/api/products", tags=["products"])
@@ -13,7 +11,6 @@ router = APIRouter(prefix="/api/products", tags=["products"])
 
 @router.get("")
 async def list_products(
-    _session: SessionData = Depends(get_current_session),
     inst_type: str | None = Query(default=None, alias="instType"),
     state: str | None = Query(default=None),
     q: str | None = Query(default=None),

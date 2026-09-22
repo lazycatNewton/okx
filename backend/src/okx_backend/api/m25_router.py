@@ -5,11 +5,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, HTTPException, Path, Query, status
 from sqlalchemy import select
 
-from okx_backend.api.deps import get_current_session
-from okx_backend.auth.session import SessionData
 from okx_backend.db.base import session_scope
 from okx_backend.db.models import M25Metric, M25Stat
 from okx_backend.services.s04_unit_preference import get_s04_unit, set_s04_unit
@@ -25,7 +23,6 @@ async def get_m25_stat(
     unit: str | None = Query(default=None),
     before: int | None = Query(default=None),
     limit: int = Query(default=100, le=100),
-    _session: SessionData = Depends(get_current_session),
 ) -> dict:
     """`inst_id` 为查询维度：S01/S04/S05 均使用永续 instId。"""
 
@@ -61,10 +58,7 @@ async def get_m25_stat(
 
 
 @router.get("/{inst_id}/m25/s04/unit")
-async def get_s04_unit_preference(
-    inst_id: str = Path(...),
-    _session: SessionData = Depends(get_current_session),
-) -> dict:
+async def get_s04_unit_preference(inst_id: str = Path(...)) -> dict:
     unit = await get_s04_unit(inst_id)
     return {"unit": unit}
 
@@ -73,7 +67,6 @@ async def get_s04_unit_preference(
 async def put_s04_unit_preference(
     inst_id: str = Path(...),
     unit: str = Query(..., pattern="^[012]$"),
-    _session: SessionData = Depends(get_current_session),
 ) -> dict:
     await set_s04_unit(inst_id, unit)
     return {"unit": unit}

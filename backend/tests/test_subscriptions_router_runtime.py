@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from okx_backend.api import subscriptions_router
-from okx_backend.auth.session import SessionData
 from okx_backend.services import selection_data_runtime
 from okx_backend.services.subscriptions import SubscriptionUpdateResult
 
@@ -43,7 +42,6 @@ async def test_update_selection_applies_runtime_data_tasks(
 
     response = await subscriptions_router.update_selection(
         subscriptions_router.UpdateSelectionRequest(instIds=["ETH-USDT-SWAP"]),
-        SessionData(user_id=1, username="testuser", created_at=0),
     )
 
     assert response == {"accepted": ["ETH-USDT-SWAP"], "rejected": []}
