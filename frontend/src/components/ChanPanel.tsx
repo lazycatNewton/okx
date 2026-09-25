@@ -1,10 +1,8 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { candlePriceFormat } from '../candleData'
-import { summarizeChan, type PricePosition } from '../chanSummary'
+import { summarizeChan, type DivergenceSummary, type PricePosition } from '../chanSummary'
 import { PROJECT_TIME_ZONE } from '../time'
 import type { CandleItem, TradeBar } from '../types'
-
-const STROKES_COLLAPSED = 8
 
 const POSITION_TEXT: Record<PricePosition, string> = {
   above: '位于最新中枢上方（> ZG）',
@@ -42,7 +40,6 @@ export function ChanPanel({ bar, items, enabled, loading }: {
   enabled: boolean
   loading: boolean
 }) {
-  const [showAllStrokes, setShowAllStrokes] = useState(false)
   const summary = useMemo(() => (enabled ? summarizeChan(items) : null), [enabled, items])
   const precision = useMemo(() => candlePriceFormat(items.filter((i) => i.confirm === '1')).precision, [items])
   const fmtTime = useMemo(() => makeTimeFormatter(bar), [bar])
@@ -58,7 +55,19 @@ export function ChanPanel({ bar, items, enabled, loading }: {
     body = <p className="empty-hint">已闭合 K 线不足，暂无法形成缠论结构（数据事实，非缺陷）。</p>
   } else {
     const { latestStroke } = summary
-    const strokes = showAllStrokes ? summary.strokes : summary.strokes.slice(0, STROKES_COLLAPSED)
+    const renderPoints = (points: DivergenceSummary[]) => points.length > 0 && (
+      <ol className="chan-points">
+        {points.map((d) => (
+          <li key={`${d.kind}-${d.ts}`}>
+            <span className="chan-time">{fmtTime(d.ts)}</span>
+            <span className={`chan-tag ${d.isExhaustion ? 'is-bc' : 'is-div'}`}>{d.code}</span>
+            <span className={d.isTop ? 'chan-down' : 'chan-up'}>{d.label}</span>
+            <span className="chan-muted">@ {price(d.price)}</span>
+          </li>
+        ))}
+      </ol>
+    )
+    const pre = summary.preZhongshuPoints
     body = (
       <>
         <p className="chan-range">
@@ -89,9 +98,12 @@ export function ChanPanel({ bar, items, enabled, loading }: {
           </div>
         )}
 
-        <h4 className="chan-section-title">中枢 <small>最新在前</small></h4>
+        <h4 className="chan-section-title">中枢 <small>最新在前 · 背驰/背离点归属于其所在中枢段（中枢起点→下一中枢前）</small></h4>
         {summary.zhongshu.length === 0 ? (
-          <p className="empty-hint">暂未形成中枢（至少需要 3 笔重叠）。</p>
+          <>
+            <p className="empty-hint">暂未形成中枢（至少需要 3 笔重叠）。</p>
+            {pre.length > 0 && <div className="chan-zs chan-zs-pre">{renderPoints(pre)}</div>}
+          </>
         ) : (
           <ol className="chan-list">
             {summary.zhongshu.map((z) => (
@@ -110,50 +122,27 @@ export function ChanPanel({ bar, items, enabled, loading }: {
                     {' · '}背离 <b>{z.divergenceCount}</b>
                   </span>
                 </div>
+                {renderPoints(z.points)}
               </li>
             ))}
+            {pre.length > 0 && (
+              <li className="chan-zs chan-zs-pre">
+                <div className="chan-zs-head">
+                  <strong>首个中枢之前</strong>
+                  <span className="chan-muted">不属于任何中枢段</span>
+                </div>
+                <div className="chan-zs-body">
+                  <span>
+                    背驰 <b className={pre.some((d) => d.isExhaustion) ? 'chan-hot' : ''}>{pre.filter((d) => d.isExhaustion).length}</b>
+                    {' · '}背离 <b>{pre.filter((d) => !d.isExhaustion).length}</b>
+                  </span>
+                </div>
+                {renderPoints(pre)}
+              </li>
+            )}
           </ol>
         )}
 
-        <h4 className="chan-section-title">背驰 / 背离 <small>最新在前</small></h4>
-        {summary.divergences.length === 0 ? (
-          <p className="empty-hint">暂无背驰或背离。</p>
-        ) : (
-          <ol className="chan-list chan-timeline">
-            {summary.divergences.map((d) => (
-              <li key={`${d.kind}-${d.ts}`}>
-                <span className="chan-time">{fmtTime(d.ts)}</span>
-                <span className={`chan-tag ${d.isExhaustion ? 'is-bc' : 'is-div'}`}>{d.code}</span>
-                <span className={d.isTop ? 'chan-down' : 'chan-up'}>{d.label}</span>
-                <span className="chan-muted">@ {price(d.price)}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-
-        <h4 className="chan-section-title">笔 <small>最新在前</small></h4>
-        <table className="chan-strokes">
-          <thead>
-            <tr><th>#</th><th>方向</th><th>起止（ET）</th><th>价格</th><th>幅度</th><th>K 线</th></tr>
-          </thead>
-          <tbody>
-            {strokes.map((s) => (
-              <tr key={s.seq}>
-                <td className="chan-muted">{s.seq}</td>
-                <td className={`chan-${s.direction}`}>{s.direction === 'up' ? '▲ 上' : '▼ 下'}</td>
-                <td>{fmtTime(s.startTs)} – {fmtTime(s.endTs)}</td>
-                <td>{price(s.startPrice)} → {price(s.endPrice)}</td>
-                <td className={`chan-${s.direction}`}>{formatPct(s.changePct)}</td>
-                <td className="chan-muted">{s.bars}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {summary.strokes.length > STROKES_COLLAPSED && (
-          <button className="chan-more" onClick={() => setShowAllStrokes((v) => !v)}>
-            {showAllStrokes ? '收起' : `展开全部 ${summary.strokes.length} 笔`}
-          </button>
-        )}
       </>
     )
   }

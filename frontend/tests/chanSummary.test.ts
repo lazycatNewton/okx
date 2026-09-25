@@ -46,10 +46,17 @@ test('every list is newest-first and counts are internally consistent', () => {
   }
 })
 
-test('per-zhongshu divergence counts never exceed the global totals', () => {
+test('every divergence point is listed exactly once: under its zhongshu segment or before the first zhongshu', () => {
   const summary = summarizeChan(candles(300))!
-  const bc = summary.zhongshu.reduce((n, z) => n + z.exhaustionCount, 0)
-  const div = summary.zhongshu.reduce((n, z) => n + z.divergenceCount, 0)
-  assert.ok(bc <= summary.exhaustionCount)
-  assert.ok(div <= summary.divergenceCount)
+  const descending = (values: number[]) => values.every((v, i) => i === 0 || values[i - 1] >= v)
+  for (const z of summary.zhongshu) {
+    assert.equal(z.points.length, z.exhaustionCount + z.divergenceCount)
+    assert.ok(descending(z.points.map((p) => p.ts)))
+    assert.ok(z.points.every((p) => p.ts >= z.startTs), 'segment points never precede their zhongshu')
+  }
+  assert.ok(descending(summary.preZhongshuPoints.map((p) => p.ts)))
+  const listed = [...summary.zhongshu.flatMap((z) => z.points), ...summary.preZhongshuPoints]
+    .map((p) => `${p.kind}@${p.ts}`).sort()
+  const all = summary.divergences.map((p) => `${p.kind}@${p.ts}`).sort()
+  assert.deepEqual(listed, all)
 })

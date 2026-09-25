@@ -678,9 +678,9 @@ body {
 .chan-panel { text-align: left; }
 .chan-panel h3 { text-transform: none; letter-spacing: 0; }
 .chan-panel .panel-heading { gap: 12px; flex-wrap: wrap; }
-.chan-muted, .chan-strokes td.chan-muted { color: #64748b; font-size: 12px; }
-.chan-up, .chan-strokes td.chan-up { color: #22c55e; }
-.chan-down, .chan-strokes td.chan-down { color: #ef4444; }
+.chan-muted { color: #64748b; font-size: 12px; }
+.chan-up { color: #22c55e; }
+.chan-down { color: #ef4444; }
 .chan-hot { color: #f97316; font-weight: 600; }
 .chan-range { margin: 0 0 12px; color: #94a3b8; font-size: 12px; }
 .chan-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin: 0 0 12px; }
@@ -691,17 +691,17 @@ body {
 .chan-dir { font-weight: 600; }
 .chan-section-title { margin: 16px 0 8px; font-size: 13px; color: #cbd5e1; }
 .chan-section-title small { margin-left: 6px; color: #64748b; font-weight: 400; font-size: 11px; }
-.chan-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; font-variant-numeric: tabular-nums; }
+.chan-list { list-style: none; margin: 0; padding: 0; max-height: 520px; overflow-y: auto; font-variant-numeric: tabular-nums; }
 .chan-zs { padding: 8px 10px; border: 1px solid #1f2937; border-left: 3px solid rgba(234, 179, 8, 0.8); border-radius: 4px; margin-bottom: 6px; }
 .chan-zs-head, .chan-zs-body { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; font-size: 13px; }
 .chan-zs-head strong { color: #facc15; }
 .chan-zs-body { margin-top: 4px; color: #cbd5e1; }
-.chan-timeline li { display: grid; grid-template-columns: 110px 56px 64px 1fr; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid #1f2937; font-size: 13px; }
+.chan-points { list-style: none; margin: 8px 0 0; padding: 6px 0 0; border-top: 1px dashed #1f2937; }
+.chan-points li:last-child { border-bottom: none; }
+.chan-zs-pre { border-left-color: #475569; }
+.chan-zs-pre .chan-zs-head strong { color: #94a3b8; }
+.chan-points li { display: grid; grid-template-columns: 110px 56px 64px 1fr; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid #1f2937; font-size: 13px; }
 .chan-time { color: #94a3b8; }
 .chan-tag { font-size: 11px; font-weight: 600; text-align: center; border-radius: 3px; padding: 1px 4px; }
 .chan-tag.is-bc { background: rgba(249, 115, 22, 0.95); color: #111827; }
 .chan-tag.is-div { background: rgba(249, 115, 22, 0.2); color: #fdba74; }
-.chan-strokes { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
-.chan-strokes th { text-align: left; color: #64748b; font-weight: 400; padding: 4px 6px; border-bottom: 1px solid #334155; }
-.chan-strokes td { padding: 4px 6px; border-bottom: 1px solid #1f2937; color: #cbd5e1; }
-.chan-more { margin-top: 6px; padding: 3px 10px; border: 1px solid #333; background: #1f2937; color: #cbd5e1; border-radius: 4px; cursor: pointer; font-size: 12px; }

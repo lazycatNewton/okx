@@ -19,6 +19,7 @@ export interface ZhongshuSummary {
   // 即中枢本身加上离开段，背驰判断看的正是离开段。
   exhaustionCount: number
   divergenceCount: number
+  points: DivergenceSummary[] // 本段内的具体背驰/背离点，时间倒序
 }
 
 export interface DivergenceSummary {
@@ -53,6 +54,8 @@ export interface ChanSummary {
   divergenceCount: number
   // 以下列表均为时间倒序（最新在前）
   zhongshu: ZhongshuSummary[]
+  // 首个中枢形成之前的背驰/背离点（不属于任何中枢段），时间倒序；没有中枢时即全部点
+  preZhongshuPoints: DivergenceSummary[]
   divergences: DivergenceSummary[]
   strokes: StrokeSummary[]
   latestStroke: StrokeSummary | null
@@ -84,14 +87,15 @@ export function summarizeChan(items: CandleItem[]): ChanSummary | null {
   const tsAt = (index: number) => confirmed[index].ts
   const lastIndex = confirmed.length - 1
 
-  const divergences: DivergenceSummary[] = analysis.divergences.map((d) => ({
+  const toSummary = (d: (typeof analysis.divergences)[number]): DivergenceSummary => ({
     ts: tsAt(d.index),
     kind: d.kind,
     price: d.price,
     isTop: d.kind === 'top_exhaustion' || d.kind === 'top_divergence',
     isExhaustion: d.kind === 'top_exhaustion' || d.kind === 'bottom_exhaustion',
     ...DIVERGENCE_TEXT[d.kind],
-  }))
+  })
+  const divergences = analysis.divergences.map(toSummary)
 
   const zhongshu: ZhongshuSummary[] = analysis.zhongshu.map((z, i, all) => {
     const zoneEnd = i + 1 < all.length ? all[i + 1].startIndex - 1 : lastIndex
@@ -108,8 +112,15 @@ export function summarizeChan(items: CandleItem[]): ChanSummary | null {
       dd: z.dd,
       exhaustionCount: inZone.filter((d) => d.kind.endsWith('exhaustion')).length,
       divergenceCount: inZone.filter((d) => d.kind.endsWith('divergence')).length,
+      points: inZone.map(toSummary).reverse(),
     }
   })
+
+  const firstZoneStart = analysis.zhongshu[0]?.startIndex ?? Number.POSITIVE_INFINITY
+  const preZhongshuPoints = analysis.divergences
+    .filter((d) => d.index < firstZoneStart)
+    .map(toSummary)
+    .reverse()
 
   const strokes: StrokeSummary[] = analysis.strokes.map((s, i) => ({
     seq: i + 1,
@@ -138,6 +149,7 @@ export function summarizeChan(items: CandleItem[]): ChanSummary | null {
     exhaustionCount: divergences.filter((d) => d.isExhaustion).length,
     divergenceCount: divergences.filter((d) => !d.isExhaustion).length,
     zhongshu: zhongshu.reverse(),
+    preZhongshuPoints,
     divergences: divergences.reverse(),
     strokes: strokes.slice().reverse(),
     latestStroke: strokes.at(-1) ?? null,
