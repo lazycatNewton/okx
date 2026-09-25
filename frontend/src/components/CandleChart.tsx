@@ -13,6 +13,7 @@ import {
 import { candlePriceFormat, candleWindowMs } from '../candleData'
 import { computeChanOverlay, isChanEnabledForBar, type ChanKind } from '../chanOverlay'
 import { ChanStrokePrimitive, ChanZhongshuPrimitive } from '../chanPrimitives'
+import { ChanPanel } from './ChanPanel'
 import { buildCandleLegend } from '../chartDisplay'
 import type { ProductRealtimeState } from '../marketDataStore'
 import { chartTimeInEt, formatChartTick, formatChartTime } from '../time'
@@ -177,6 +178,7 @@ function CandleChartView({ instId, realtime, kind, title, bar, setBar, bars, ari
   }, [chanOverlay])
 
   return (
+    <>
     <section className="panel candle-chart" aria-busy={loading}>
       <div className="candle-chart-header">
         <h3>{title}</h3>
@@ -205,6 +207,9 @@ function CandleChartView({ instId, realtime, kind, title, bar, setBar, bars, ari
       )}
       <p className="chart-attribution">Chart by <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">TradingView</a></p>
     </section>
+    {/* 与图表共用同一份已去重排序的数据与周期状态：切换周期时面板随图表即时切换。 */}
+    <ChanPanel bar={bar} items={chartData} enabled={chanEnabled} loading={loading} />
+    </>
   )
 }
 
