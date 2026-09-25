@@ -20,3 +20,18 @@ test('edge toggle remains outside hidden sidebar and follows width', () => {
   assert.match(css, /\.product-sidebar-toggle\s*\{[^}]*position: fixed;[^}]*left: 0;[^}]*top: 50%;/)
   assert.match(css, /\.product-sidebar-toggle\.is-open\s*\{ left: var\(--product-sidebar-width\);/)
 })
+test('mobile layout: visible title, dynamic viewport height, phone breakpoint and backdrop', () => {
+  assert.match(css, /\.app-header h1\s*\{[^}]*color: #e6e6e6;/)
+  assert.match(css, /\.app-shell\s*\{[^}]*height: 100dvh;/)
+  const mobile = css.slice(css.indexOf('@media (max-width: 640px)'))
+  assert.ok(mobile.length > 30, 'phone breakpoint exists')
+  assert.match(mobile, /\.product-sidebar-backdrop \{ display: block;/)
+  assert.match(mobile, /input, select, textarea \{ font-size: 16px; \}/)
+  assert.match(app, /product-sidebar-backdrop/)
+})
+test('charts let vertical touch swipes scroll the page', () => {
+  for (const file of ['CandleChart.tsx', 'M25Panel.tsx']) {
+    const src = readFileSync(new URL(`../src/components/${file}`, import.meta.url), 'utf8')
+    assert.match(src, /handleScroll: \{ vertTouchDrag: false \}/, file)
+  }
+})

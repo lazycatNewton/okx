@@ -86,6 +86,9 @@ export default function App() {
       >
         <span aria-hidden="true">{productSidebarOpen ? '‹' : '›'}</span>
       </button>
+      {productSidebarOpen && (
+        <div className="product-sidebar-backdrop" aria-hidden="true" onClick={() => setProductSidebarOpen(false)} />
+      )}
       <main className="app-main">
         {activeInstId ? (
           <ProductPanel instId={activeInstId} />

@@ -56,6 +56,7 @@ function StatLineChart({
       layout: { background: { type: ColorType.Solid, color: '#111827' }, textColor: '#cbd5e1' },
       grid: { vertLines: { color: '#1f2937' }, horzLines: { color: '#1f2937' } },
       rightPriceScale: { borderColor: '#334155' },
+      handleScroll: { vertTouchDrag: false },
       localization: { timeFormatter: formatChartTime },
       timeScale: { borderColor: '#334155', timeVisible: true, tickMarkFormatter: formatChartTick },
     })

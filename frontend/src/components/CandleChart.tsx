@@ -83,6 +83,8 @@ function CandleChartView({ instId, realtime, kind, title, bar, setBar, bars, ari
       layout: { background: { type: ColorType.Solid, color: '#111827' }, textColor: '#cbd5e1' },
       grid: { vertLines: { color: '#1f2937' }, horzLines: { color: '#1f2937' } },
       crosshair: { mode: 1 },
+      // 触屏上纵向滑动交给页面滚动，否则手指落在图表上就无法上下翻页；横向拖动仍平移图表。
+      handleScroll: { vertTouchDrag: false },
       localization: { timeFormatter: formatChartTime },
       rightPriceScale: { borderColor: '#334155' },
       timeScale: {
@@ -197,7 +199,7 @@ function CandleChartView({ instId, realtime, kind, title, bar, setBar, bars, ari
             <span>最高 <strong>{hoveredCandle.high}</strong></span>
             <span>最低 <strong>{hoveredCandle.low}</strong></span>
           </>
-        ) : <span className="candle-ohlc-placeholder">移动光标查看 OHLC</span>}
+        ) : <span className="candle-ohlc-placeholder"><span className="hint-pointer">移动光标查看 OHLC</span><span className="hint-touch">触摸图表查看 OHLC</span></span>}
       </div>
       {loading && items.length === 0 && <p className="empty-hint">加载中…</p>}
       {/* 保留布局尺寸，避免 display:none 使自动宽度为零、首次时间范围随后被拉伸。 */}

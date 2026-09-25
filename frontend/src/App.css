@@ -14,6 +14,8 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  /* 移动端浏览器地址栏会遮住 100vh 底部；支持 dvh 时以可见视口高度为准 */
+  height: 100dvh;
 }
 
 .app-header {
@@ -29,6 +31,8 @@ body {
 .app-header h1 {
   margin: 0;
   font-size: 20px;
+  /* 不继承模板的 --text-h：浅色模式下它是近黑色，在深色标题栏上不可见 */
+  color: #e6e6e6;
   line-height: 1.4;
   letter-spacing: normal;
 }
@@ -266,7 +270,7 @@ body {
 
 .trades-table { min-width: 300px; flex: 1; }
 .trade-list { max-height: 235px; overflow-y: auto; font-variant-numeric: tabular-nums; }
-.trade-row { display: grid; grid-template-columns: 78px 42px 1fr 1fr 36px; gap: 8px; padding: 4px 0; font-size: 12px; }
+.trade-row { display: grid; grid-template-columns: minmax(78px, max-content) 42px 1fr 1fr 36px; gap: 8px; padding: 4px 0; font-size: 12px; }
 .trade-row.buy strong, .trade-row.buy span:nth-child(2) { color: #4ade80; }
 .trade-row.sell strong, .trade-row.sell span:nth-child(2) { color: #f87171; }
 
@@ -291,8 +295,9 @@ body {
 }
 
 .product-selector {
-  width: 480px;
+  width: min(480px, calc(100vw - 24px));
   max-height: 80vh;
+  max-height: 80dvh;
   display: flex;
   flex-direction: column;
   background: #1a1d24;
@@ -376,12 +381,13 @@ body {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 380px;
+  width: min(380px, 100vw);
   background: #1a1d24;
   border-left: 1px solid #2a2e37;
   display: flex;
   flex-direction: column;
-  z-index: 50;
+  /* 高于产品侧边栏的边缘按钮（51），避免按钮浮在市场/日历面板上 */
+  z-index: 60;
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.4);
 }
 
@@ -705,3 +711,38 @@ body {
 .chan-tag { font-size: 11px; font-weight: 600; text-align: center; border-radius: 3px; padding: 1px 4px; }
 .chan-tag.is-bc { background: rgba(249, 115, 22, 0.95); color: #111827; }
 .chan-tag.is-div { background: rgba(249, 115, 22, 0.2); color: #fdba74; }
+
+/* 触控设备没有“移动光标”，按输入方式切换提示文案 */
+.hint-touch { display: none; }
+@media (hover: none) {
+  .hint-pointer { display: none; }
+  .hint-touch { display: inline; }
+}
+
+/* 产品侧边栏遮罩：仅移动端显示，点击空白处收起抽屉 */
+.product-sidebar-backdrop { display: none; }
+
+/* ---------------- 移动端（≤ 640px） ---------------- */
+@media (max-width: 640px) {
+  .app-shell { --product-sidebar-width: min(260px, 80vw); }
+  .app-header { padding: 10px 12px; }
+  .app-header h1 { font-size: 17px; }
+  .app-main { padding: 10px; }
+  .product-panel, .product-panel-row { gap: 10px; }
+  .panel { padding: 12px; }
+  .ticker-card, .numeric-card, .trades-table { min-width: 0; flex-basis: 100%; }
+
+  /* 边缘按钮缩小并移到左下角，不再压在 K 线图正中 */
+  .product-sidebar-toggle { top: auto; bottom: 20px; transform: none; width: 20px; height: 44px; font-size: 22px; }
+  .product-sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 49; background: rgba(0, 0, 0, 0.45); }
+
+  /* iOS 在输入框字号 < 16px 时聚焦会自动放大页面 */
+  input, select, textarea { font-size: 16px; }
+
+  .candle-chart-header { flex-wrap: wrap; gap: 8px; }
+  .chan-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .chan-stats > div { padding: 6px 8px; }
+  .chan-stats dd { font-size: 17px; }
+  .chan-points li { grid-template-columns: max-content max-content max-content 1fr; gap: 6px; white-space: nowrap; }
+  .chan-zs-head, .chan-zs-body { gap: 2px 10px; }
+}
