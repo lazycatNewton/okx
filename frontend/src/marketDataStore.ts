@@ -59,13 +59,18 @@ class MarketDataStore {
   private stopped = false
 
   connect(): void {
-    if (this.ws || this.stopped) return
+    // disconnect() 后允许再次 connect()：React StrictMode 在开发环境会把 effect 执行成
+    // connect → disconnect → connect，若 stopped 永久生效，页面将永远没有实时连接。
+    this.stopped = false
+    if (this.ws) return
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const url = `${protocol}//${window.location.host}/ws/app`
     const ws = new WebSocket(url)
     this.ws = ws
 
+    // 已被 disconnect() 或新连接取代的旧 socket，其迟到的事件不得改写当前连接状态。
     ws.onopen = () => {
+      if (this.ws !== ws) return
       this.reconnectAttempt = 0
       this.connected = true
       // 重连后按当前已激活集合重新声明；后端会先回 snapshot 再回 update。
@@ -76,10 +81,12 @@ class MarketDataStore {
     }
 
     ws.onmessage = (event) => {
+      if (this.ws !== ws) return
       this.handleMessage(event.data)
     }
 
     ws.onclose = () => {
+      if (this.ws !== ws) return
       this.connected = false
       this.ws = null
       this.notify()
@@ -94,8 +101,11 @@ class MarketDataStore {
   disconnect(): void {
     this.stopped = true
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
-    this.ws?.close()
+    this.reconnectTimer = null
+    const ws = this.ws
     this.ws = null
+    this.connected = false
+    ws?.close()
   }
 
   private scheduleReconnect(): void {
