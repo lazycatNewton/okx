@@ -43,6 +43,7 @@ def _apply_nacos_config_if_enabled_sync() -> None:
         mysql_database=remote.mysql_database,
         redis_host=remote.redis_host,
         redis_port=remote.redis_port,
+        redis_username=remote.redis_username,
         redis_password=remote.redis_password,
     )
 

@@ -57,7 +57,8 @@ uv run uvicorn okx_backend.main:app --reload
 | 变量 | 说明 |
 | --- | --- |
 | `OKX_APP_MYSQL_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_DATABASE` | 远程 MySQL 8.0+ 连接信息；`ENV=prod` 时被 Nacos 远程配置覆盖 |
-| `OKX_APP_REDIS_HOST` / `_PORT` / `_DB` / `_PASSWORD` | Redis 连接信息；`ENV=prod` 时 host/port/password 被 Nacos 远程配置覆盖 |
+| `OKX_APP_REDIS_HOST` / `_PORT` / `_DB` / `_USERNAME` / `_PASSWORD` | Redis 连接信息（账号密码认证，用户名与密码会做 URL 编码）；`ENV=prod` 时 host/port/username/password 被 Nacos 远程配置覆盖 |
+| `OKX_APP_REDIS_SSL` | `true` 时用 `rediss://` 走 TLS 并校验证书，默认 `false`；不来自 Nacos，`ENV=prod` 时须由 OS 环境变量设置 |
 | `OKX_APP_OKX_API_KEY` / `_SECRET` / `_PASSPHRASE` | M23 经济日历鉴权（可选；未配置时应用返回空数据集） |
 | `OKX_APP_DEBUG` | `true` 时开启 SQL echo，仅本地调试用 |
 

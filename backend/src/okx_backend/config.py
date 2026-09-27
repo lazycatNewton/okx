@@ -18,6 +18,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -75,12 +76,17 @@ class Settings(BaseSettings):
     redis_host: str = Field(default="127.0.0.1")
     redis_port: int = Field(default=6379)
     redis_db: int = Field(default=0)
+    redis_username: str | None = Field(default=None)
     redis_password: str | None = Field(default=None)
+    redis_ssl: bool = Field(default=False)
 
     @property
     def redis_url(self) -> str:
-        auth = f":{self.redis_password}@" if self.redis_password else ""
-        return f"redis://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
+        user = quote(self.redis_username, safe="") if self.redis_username else ""
+        password = quote(self.redis_password, safe="") if self.redis_password else ""
+        auth = f"{user}:{password}@" if (user or password) else ""
+        scheme = "rediss" if self.redis_ssl else "redis"
+        return f"{scheme}://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
     # --- OKX 全球站实盘（okx-requirements.md 第 1 节 / 第 3 节接口依据）---
     okx_rest_base: str = Field(default="https://www.okx.com")
@@ -122,6 +128,7 @@ def apply_remote_storage_config(
     mysql_database: str,
     redis_host: str,
     redis_port: int,
+    redis_username: str | None,
     redis_password: str | None,
 ) -> None:
     """用 Nacos 远程配置覆盖已缓存的 Settings 实例（原地修改）。
@@ -138,4 +145,5 @@ def apply_remote_storage_config(
     settings.mysql_database = mysql_database
     settings.redis_host = redis_host
     settings.redis_port = redis_port
+    settings.redis_username = redis_username
     settings.redis_password = redis_password
