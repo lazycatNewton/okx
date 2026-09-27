@@ -1,0 +1,123 @@
+name: Release To Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to release
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: okx-production-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify Release Source
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.19"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv sync --frozen
+        working-directory: backend
+      - run: uv run ruff check .
+        working-directory: backend
+      - run: uv run mypy src
+        working-directory: backend
+      - run: uv run pytest -q
+        working-directory: backend
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  publish:
+    name: Build And Publish Images
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REGISTRY: registry.lazycatnewton.online
+      SOURCE_SHA: ${{ needs.verify.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/okx/backend:${{ env.SOURCE_SHA }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/okx/frontend:${{ env.SOURCE_SHA }}
+
+  deploy:
+    name: Update GitOps Images
+    needs:
+      - verify
+      - publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_SHA: ${{ needs.verify.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: lazycatNewton/deployment-config
+          ref: main
+          path: deployment-config
+          ssh-key: ${{ secrets.DEPLOYMENT_CONFIG_SSH_KEY }}
+      - name: Update immutable image tags
+        run: |
+          set -euo pipefail
+          cd deployment-config
+          backend=clusters/production/apps/okx/backend-deployment.yaml
+          frontend=clusters/production/apps/okx/frontend-deployment.yaml
+          test -f "$backend"
+          test -f "$frontend"
+          perl -0pi -e 's{image: registry\.lazycatnewton\.online/okx/backend:\S+}{"image: registry.lazycatnewton.online/okx/backend:$ENV{SOURCE_SHA}"}ge' "$backend"
+          perl -0pi -e 's{image: registry\.lazycatnewton\.online/okx/frontend:\S+}{"image: registry.lazycatnewton.online/okx/frontend:$ENV{SOURCE_SHA}"}e' "$frontend"
+          git diff --check
+          git diff --quiet && exit 0
+          git config user.name "okx release bot"
+          git config user.email "okx-release-bot@users.noreply.github.com"
+          git add "$backend" "$frontend"
+          git commit -m "deploy(okx): ${SOURCE_SHA}"
+          for attempt in 1 2 3; do
+            git push origin main && exit 0
+            git pull --rebase origin main
+          done
+          exit 1

@@ -89,6 +89,10 @@ def test_localhost_settings_os_env_overrides_dotenv_file(
     assert settings.mysql_host == "from-os-env-wins"
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / ".env.localhost").is_file(),
+    reason="需要本机 backend/.env.localhost（已被 gitignore，CI 中不存在）",
+)
 def test_settings_env_file_path_is_absolute_and_independent_of_cwd(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
