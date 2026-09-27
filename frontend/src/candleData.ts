@@ -26,5 +26,6 @@ export function candlePriceFormat(items: CandleItem[]) {
     }
   }
   precision = Math.min(16, precision)
-  return { type: 'price' as const, precision, minMove: 10 ** -precision }
+  // 1 / 10 ** n 而非 10 ** -n：后者在部分 V8 版本（如 Node 22）上得到 0.000009999… 这类误差值。
+  return { type: 'price' as const, precision, minMove: 1 / 10 ** precision }
 }
