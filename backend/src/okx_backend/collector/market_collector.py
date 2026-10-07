@@ -6,7 +6,8 @@
 - M05 五档盘口：public WS `books5`。
 
 已选产品集合来自订阅目录（数据库当前有效配置），本采集器只处理"持续采集"部分——
-即：只要产品仍是已选且 live，无论 Tab 是否激活、浏览器是否连接，都要采集并落库。
+即：只要产品仍是已选且 live，无论 Tab 是否激活、浏览器是否连接，都要采集。
+目前只有 M02 K 线落 MySQL；M01/M03/M05/M10/M13 仅写 Redis 最新值（2026-10-07）。
 `activate-product`/`deactivate-product`（浏览器实时分发开关）不影响这里的 desired 集合。
 """
 
@@ -25,13 +26,8 @@ from okx_backend.cache import get_redis
 from okx_backend.config import get_settings
 from okx_backend.db.base import session_scope
 from okx_backend.db.models import (
-    Book5Snapshot,
     Candle,
     CandleKind,
-    MarkPriceSnapshot,
-    OpenInterestSnapshot,
-    PublicTrade,
-    TickerSnapshot,
 )
 from okx_backend.okx_client.ws_client import ChannelArg, OkxWsClient
 from okx_backend.realtime.hub import get_hub
@@ -133,45 +129,12 @@ class MarketCollector:
             for row in data:
                 await self._store_open_interest(row)
 
+    # M01/M03/M05/M10/M13 暂不落 MySQL（用户指令，2026-10-07）：仅维护 Redis 最新值并广播。
+    # 对应表、模型与 7 天保留清理暂留，让存量行自然过期。
     async def _store_ticker(self, row: dict) -> None:
         inst_id = row["instId"]
-        ts_ms = int(row["ts"])
         redis = get_redis()
         await redis.set(f"m01:latest:{inst_id}", json.dumps(row), ex=120)
-        async with session_scope() as session:
-            stmt = (
-                mysql_insert(TickerSnapshot)
-                .values(
-                    inst_id=inst_id,
-                    inst_type=row.get("instType", self._inst_types.get(inst_id, "")),
-                    ts_ms=ts_ms,
-                    last=row.get("last"),
-                    last_sz=row.get("lastSz"),
-                    bid_px=row.get("bidPx"),
-                    bid_sz=row.get("bidSz"),
-                    ask_px=row.get("askPx"),
-                    ask_sz=row.get("askSz"),
-                    open24h=row.get("open24h"),
-                    high24h=row.get("high24h"),
-                    low24h=row.get("low24h"),
-                    vol_ccy24h=row.get("volCcy24h"),
-                    vol24h=row.get("vol24h"),
-                    sod_utc0=row.get("sodUtc0"),
-                    sod_utc8=row.get("sodUtc8"),
-                    raw_payload=row,
-                )
-                .on_duplicate_key_update(
-                    last=row.get("last"),
-                    last_sz=row.get("lastSz"),
-                    bid_px=row.get("bidPx"),
-                    bid_sz=row.get("bidSz"),
-                    ask_px=row.get("askPx"),
-                    ask_sz=row.get("askSz"),
-                    raw_payload=row,
-                    received_at=datetime.now(UTC),
-                )
-            )
-            await session.execute(stmt)
         await get_hub().broadcast_update(inst_id, "ticker", row)
 
     async def _store_book5(self, inst_id: str | None, row: dict) -> None:
@@ -180,27 +143,8 @@ class MarketCollector:
         if inst_id is None:
             logger.warning(f"books5 row missing instId: {row!r}")
             return
-        ts_ms = int(row["ts"])
         redis = get_redis()
         await redis.set(f"m05:latest:{inst_id}", json.dumps(row), ex=120)
-        async with session_scope() as session:
-            stmt = (
-                mysql_insert(Book5Snapshot)
-                .values(
-                    inst_id=inst_id,
-                    ts_ms=ts_ms,
-                    asks=row.get("asks", []),
-                    bids=row.get("bids", []),
-                    raw_payload=row,
-                )
-                .on_duplicate_key_update(
-                    asks=row.get("asks", []),
-                    bids=row.get("bids", []),
-                    raw_payload=row,
-                    received_at=datetime.now(UTC),
-                )
-            )
-            await session.execute(stmt)
         await get_hub().broadcast_update(inst_id, "books5", row)
 
     async def _store_public_trade(self, inst_id: str | None, row: dict) -> None:
@@ -209,13 +153,6 @@ class MarketCollector:
         if inst_id is None or trade_id is None:
             logger.warning(f"trade row missing identity: {row!r}")
             return
-        async with session_scope() as session:
-            stmt = mysql_insert(PublicTrade).values(
-                inst_id=inst_id, trade_id=trade_id, ts_ms=int(row["ts"]), px=row["px"],
-                sz=row["sz"], side=row["side"], count=row.get("count"),
-                source=row.get("source"), seq_id=row.get("seqId"), raw_payload=row,
-            ).on_duplicate_key_update(received_at=datetime.now(UTC))
-            await session.execute(stmt)
         redis = get_redis()
         key = f"m03:latest:{inst_id}"
         raw = await redis.get(key)
@@ -224,25 +161,14 @@ class MarketCollector:
         await redis.set(key, json.dumps(latest), ex=120)
         await get_hub().broadcast_update(inst_id, "trades", row)
 
-    # -- public: M10 mark-price / M13 open-interest（均仅永续，每秒快照）--------
+    # -- public: M10 mark-price / M13 open-interest（均仅永续）-----------------
     async def _store_mark_price(self, row: dict) -> None:
         inst_id = row.get("instId")
         if inst_id is None:
             logger.warning(f"mark-price row missing instId: {row!r}")
             return
-        ts_ms = int(row["ts"])
         redis = get_redis()
         await redis.set(f"m10:latest:{inst_id}", json.dumps(row), ex=120)
-        async with session_scope() as session:
-            stmt = mysql_insert(MarkPriceSnapshot).values(
-                inst_id=inst_id,
-                inst_type=row.get("instType", self._inst_types.get(inst_id, "")),
-                ts_ms=ts_ms,
-                mark_px=row.get("markPx"),
-            ).on_duplicate_key_update(
-                mark_px=row.get("markPx"), received_at=datetime.now(UTC)
-            )
-            await session.execute(stmt)
         await get_hub().broadcast_update(inst_id, "mark-price", row)
 
     async def _store_open_interest(self, row: dict) -> None:
@@ -250,22 +176,8 @@ class MarketCollector:
         if inst_id is None:
             logger.warning(f"open-interest row missing instId: {row!r}")
             return
-        ts_ms = int(row["ts"])
         redis = get_redis()
         await redis.set(f"m13:latest:{inst_id}", json.dumps(row), ex=120)
-        async with session_scope() as session:
-            stmt = mysql_insert(OpenInterestSnapshot).values(
-                inst_id=inst_id,
-                inst_type=row.get("instType", self._inst_types.get(inst_id, "")),
-                ts_ms=ts_ms,
-                oi=row.get("oi"),
-                oi_ccy=row.get("oiCcy"),
-                oi_usd=row.get("oiUsd"),
-            ).on_duplicate_key_update(
-                oi=row.get("oi"), oi_ccy=row.get("oiCcy"), oi_usd=row.get("oiUsd"),
-                received_at=datetime.now(UTC),
-            )
-            await session.execute(stmt)
         await get_hub().broadcast_update(inst_id, "open-interest", row)
 
     # -- business: trade candles ---------------------------------------------

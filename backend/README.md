@@ -12,7 +12,7 @@ OKX 行情连接服务后端（REQ-001 核心闭环阶段）。实现依据见�
 - 产品选择（`PUT /api/subscriptions/products`），仅接受 `state=live`。
 - 持续采集 M01（ticker）、M02（成交价 K 线 1s/5m/15m/1D）、M05（books5 五档）：
   - OKX WebSocket 客户端自实现（心跳、指数退避重连、连接代次、desired/active 订阅集合）。
-  - MySQL 落库（去重 upsert）+ Redis 最新状态缓存。
+  - M02 MySQL 落库（去重 upsert）+ Redis 最新状态缓存；M01/M03/M05/M10/M13 自 2026-10-07 起只写 Redis 最新值，不落 MySQL。
 - 浏览器 `/ws/app` 实时分发：`activate-product`/`deactivate-product`，`snapshot`→`update`→`empty` 信封。
 - `GET /api/market/{instId}/candles` 查询已保存的 K 线序列。
 - `GET /api/bootstrap` 恢复登录后状态。
