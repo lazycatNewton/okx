@@ -280,7 +280,9 @@ body {
 .m25-stat-header h4 { margin: 0; font-size: 13px; color: #cbd5e1; }
 .m25-stat-latest { font-size: 13px; color: #38bdf8; font-variant-numeric: tabular-nums; }
 .m25-chart { height: 140px; }
-.m25-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 13px; color: #bbb; }
+.m25-stat-latest { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.s04-buy { color: #22c55e; }
+.s04-sell { color: #ef4444; }
 .unit-selector button { padding: 2px 8px; margin-left: 4px; border: 1px solid #333; background: #1f2937; color: #cbd5e1; border-radius: 4px; cursor: pointer; font-size: 12px; }
 .unit-selector button.active { background: #3b82f6; color: white; border-color: #3b82f6; }
 

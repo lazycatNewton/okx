@@ -107,3 +107,25 @@ async def test_run_retention_cleanup_forever_survives_a_failed_round(
     with pytest.raises(asyncio.CancelledError):
         await task
     assert call_count >= 2
+
+
+def test_m25_deletes_use_official_window_per_period() -> None:
+    """5m 保留 5 天、15m 保留 15 天（1,440 × 周期）；1D 保留 58 个纽约自然日。"""
+
+    from okx_backend.services.m25_stats import m25_daily_cutoff_ms
+    from okx_backend.services.retention import build_m25_deletes
+
+    now = datetime(2026, 9, 21, 18, 0, tzinfo=UTC)
+    compiled = [
+        str(stmt.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True}))
+        for stmt in build_m25_deletes(now)
+    ]
+    expected = {
+        "5m": int((now - timedelta(days=5)).timestamp() * 1000),
+        "15m": int((now - timedelta(days=15)).timestamp() * 1000),
+        "1D": m25_daily_cutoff_ms(now),
+    }
+    assert len(compiled) == 3
+    for (period, cutoff), sql in zip(expected.items(), compiled, strict=True):
+        assert f"period = '{period}'" in sql and str(cutoff) in sql
+    assert m25_daily_cutoff_ms(now) < int((now - timedelta(days=57)).timestamp() * 1000)

@@ -5,7 +5,9 @@
 - K 线（M02）：`1D` 只保留最新 80 根（按 `inst_id+kind+bar` 分组，不是全局 80 根）；
   `1m/5m/15m/30m` 保留最近 10×24 小时；`1s` 保留最近 7 天；`1H` 是纽约自然日日线的
   派生源（见 services/ny_day.py），保留窗口覆盖最近 80 个纽约自然日。
-- 其余频道（M01/M03/M05/M10/M13/M22 更新/M23/M25）均为滚动 7×24 小时，
+- M25：保留官方 1,440 条上限对应的时长——`5m` 5 天、`15m` 15 天、`1D` 58 个纽约自然日
+  （见 services/m25_stats.py）。
+- 其余频道（M01/M03/M05/M10/M13/M22 更新/M23/M25 除外）均为滚动 7×24 小时，
   以各自的业务时间戳为准。M01/M03/M05/M10/M13 自 2026-10-07 起暂停写入 MySQL，
   保留其清理只为让存量行自然过期。
 """
@@ -14,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import Any, cast
 
 from loguru import logger
 from sqlalchemy import CursorResult, Select, delete, func, select
@@ -38,6 +40,12 @@ from okx_backend.services.candle_policy import (
     candle_cutoff_ms,
     is_count_limited_bar,
 )
+from okx_backend.services.m25_stats import (
+    NY_DAY_PERIOD,
+    PERIODS_S01_S04_S05,
+    m25_daily_cutoff_ms,
+    m25_window_days,
+)
 from okx_backend.services.ny_day import NY_DAY_SOURCE_BAR
 
 # (模型, 表名, 业务时间戳字段, 保留天数)：单条快照/事件按业务时间戳滚动 7 天清理。
@@ -51,7 +59,6 @@ SIMPLE_RETENTION_TABLES: tuple[tuple[type, str, InstrumentedAttribute, int], ...
     (OpenInterestSnapshot, "m13_open_interest_snapshots", OpenInterestSnapshot.ts_ms, 7),
     (EventContractRevision, "m22_revisions", EventContractRevision.business_ts, 7),
     (EconomicCalendarEvent, "m23_economic_calendar", EconomicCalendarEvent.ts_ms, 7),
-    (M25Stat, "m25_stats", M25Stat.ts_ms, 7),
 )
 
 
@@ -62,6 +69,21 @@ def build_simple_cutoff_delete(
 
     cutoff_ms = int((now - timedelta(days=days)).timestamp() * 1000)
     return delete(model).where(column < cutoff_ms)
+
+
+def build_m25_deletes(now: datetime) -> list[Any]:
+    """M25 按周期各自的窗口清理：`5m`/`15m` 为 1,440 × 周期，`1D` 按纽约自然日。"""
+
+    statements: list[Any] = []
+    for period in PERIODS_S01_S04_S05:
+        if period == NY_DAY_PERIOD:
+            cutoff = m25_daily_cutoff_ms(now)
+        else:
+            cutoff = int((now - timedelta(days=m25_window_days(period))).timestamp() * 1000)
+        statements.append(
+            delete(M25Stat).where(M25Stat.period == period, M25Stat.ts_ms < cutoff)
+        )
+    return statements
 
 
 def build_candle_age_delete(bar: str, now: datetime):
@@ -104,6 +126,12 @@ async def run_retention_cleanup(now: datetime | None = None) -> dict[str, int]:
             stmt = build_simple_cutoff_delete(model, column, days, current)
             result = cast(CursorResult, await session.execute(stmt))
             deleted[table_name] = result.rowcount
+
+        m25_total = 0
+        for stmt in build_m25_deletes(current):
+            result = cast(CursorResult, await session.execute(stmt))
+            m25_total += result.rowcount
+        deleted["m25_stats"] = m25_total
 
         candle_age_total = 0
         for bar in ALL_CANDLE_BARS_WITH_AGE_LIMIT:

@@ -1,4 +1,4 @@
-"""GET /api/market/{instId}/m25/{metric} — 已保存的 7 天 M25 统计历史查询。
+"""GET /api/market/{instId}/m25/{metric} — 已保存的 M25 统计历史查询。
 
 依据 okx-requirements.md：每个 Tab 仅显示其 instId 对应的 S01/S04/S05。
 """
@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from okx_backend.db.base import session_scope
 from okx_backend.db.models import M25Metric, M25Stat
+from okx_backend.services.m25_stats import OKX_STAT_MAX_ROWS
 from okx_backend.services.s04_unit_preference import get_s04_unit, set_s04_unit
 
 router = APIRouter(prefix="/api/market", tags=["m25"])
@@ -22,7 +23,7 @@ async def get_m25_stat(
     period: str | None = Query(default=None),
     unit: str | None = Query(default=None),
     before: int | None = Query(default=None),
-    limit: int = Query(default=100, le=100),
+    limit: int = Query(default=100, ge=1, le=OKX_STAT_MAX_ROWS),
 ) -> dict:
     """`inst_id` 为查询维度：S01/S04/S05 均使用永续 instId。"""
 

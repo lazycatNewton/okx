@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ColorType, createChart, LineSeries, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts'
 import { getM25Stat, getS04Unit, setS04Unit } from '../api'
 import { formatDecimal } from '../detailDisplay'
@@ -12,40 +12,30 @@ const S04_UNITS: { value: S04Unit; label: string }[] = [
   { value: '2', label: 'U' },
 ]
 
-function dedupeAndSort(items: M25StatItem[]): { time: Time; value: number }[] {
+// 后端保留官方每个粒度最多可取的 1,440 条，一次取全，图表展示完整保存窗口。
+const M25_FETCH_LIMIT = 1440
+
+interface LineSpec {
+  field: string
+  color: string
+}
+
+function toSeries(items: M25StatItem[], field: string): { time: Time; value: number }[] {
   const byTime = new Map<number, number>()
   for (const item of items) {
-    const value = Number((item.longShortAcctRatio ?? item.oi ?? item.buyVol) as string)
+    const value = Number(item[field] as string)
     if (Number.isFinite(value)) byTime.set(chartTimeInEt(item.ts), value)
   }
   return [...byTime.entries()].sort(([a], [b]) => a - b).map(([time, value]) => ({ time: time as Time, value }))
 }
 
-/** S01/S05 单值统计的小图表：多空比 / 持仓量。 */
-function StatLineChart({
-  title, queryKey, metric, period, valueKey,
-}: {
-  title: string
-  queryKey: string
-  metric: 'S01' | 'S05'
-  period: string
-  valueKey: string
-}) {
-  const [items, setItems] = useState<M25StatItem[]>([])
+/** M25 统计折线图：一张图可叠加多条线（S04 买入/卖出两条，S01/S05 各一条）。 */
+function StatLineChart({ items, lines }: { items: M25StatItem[]; lines: LineSpec[] }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
-  const seriesRef = useRef<ISeriesApi<'Line'> | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    getM25Stat(queryKey, metric, { period, limit: 100 }).then((res) => {
-      if (!cancelled) setItems(res.items)
-    })
-    return () => { cancelled = true }
-  }, [queryKey, metric, period])
-
-  const chartData = useMemo(() => dedupeAndSort(items), [items])
-  const latest = items.at(-1)
+  const seriesRef = useRef<ISeriesApi<'Line'>[]>([])
+  const fields = lines.map((line) => line.field).join(',')
+  const colors = lines.map((line) => line.color).join(',')
 
   useEffect(() => {
     const element = containerRef.current
@@ -61,81 +51,112 @@ function StatLineChart({
       timeScale: { borderColor: '#334155', timeVisible: true, tickMarkFormatter: formatChartTick },
     })
     chartRef.current = chart
-    seriesRef.current = chart.addSeries(LineSeries, { color: '#38bdf8', lineWidth: 2 })
-    return () => { chart.remove(); chartRef.current = null; seriesRef.current = null }
-  }, [])
+    seriesRef.current = colors.split(',').map((color) => chart.addSeries(LineSeries, { color, lineWidth: 2 }))
+    return () => { chart.remove(); chartRef.current = null; seriesRef.current = [] }
+  }, [colors])
 
   useEffect(() => {
-    seriesRef.current?.setData(chartData)
+    fields.split(',').forEach((field, index) => seriesRef.current[index]?.setData(toSeries(items, field)))
     chartRef.current?.timeScale().fitContent()
-  }, [chartData])
+  }, [items, fields, colors])
 
+  return <div ref={containerRef} className="lightweight-chart m25-chart" />
+}
+
+function useM25Items(instId: string, metric: 'S01' | 'S04' | 'S05', period: M25Period, unit?: S04Unit) {
+  const [items, setItems] = useState<M25StatItem[]>([])
+  useEffect(() => {
+    let cancelled = false
+    getM25Stat(instId, metric, { period, unit, limit: M25_FETCH_LIMIT }).then((res) => {
+      if (!cancelled) setItems(res.items)
+    })
+    return () => { cancelled = true }
+  }, [instId, metric, period, unit])
+  return items
+}
+
+function StatBlock({ title, latest, children }: { title: string; latest: ReactNode; children: ReactNode }) {
   return (
     <div className="m25-stat">
       <div className="m25-stat-header">
         <h4>{title}</h4>
-        {latest && <span className="m25-stat-latest">{String(latest[valueKey] ?? '')}</span>}
+        {latest}
       </div>
-      <div ref={containerRef} className="lightweight-chart m25-chart" />
+      {children}
     </div>
   )
 }
 
-/** S04 主动买卖量：需要单位选择器（0 币/1 合约/2 U），持久化每个产品最近一次选择。
- * 展示位置与 M01（Ticker）同一行，因此自带周期选择器，不依赖 M25Panel 的 period 状态。 */
-export function S04Chart({ instId }: { instId: string }) {
-  const [period, setPeriod] = useState<M25Period>('5m')
+/** S01/S05 单值统计：多空比 / 持仓量。 */
+function SingleStat({
+  title, instId, metric, period, field,
+}: {
+  title: string
+  instId: string
+  metric: 'S01' | 'S05'
+  period: M25Period
+  field: string
+}) {
+  const items = useM25Items(instId, metric, period)
+  const lines = useMemo(() => [{ field, color: '#38bdf8' }], [field])
+  const latest = items.at(-1)
+  return (
+    <StatBlock
+      title={title}
+      latest={latest && <span className="m25-stat-latest">{String(latest[field] ?? '')}</span>}
+    >
+      <StatLineChart items={items} lines={lines} />
+    </StatBlock>
+  )
+}
+
+const S04_LINES: LineSpec[] = [
+  { field: 'buyVol', color: '#22c55e' },
+  { field: 'sellVol', color: '#ef4444' },
+]
+
+/** S04 主动买卖量：买入/卖出两条折线；单位选择器（0 币/1 合约/2 U）按产品持久化最近一次选择。 */
+function S04Stat({ instId, period }: { instId: string; period: M25Period }) {
   const [unit, setUnit] = useState<S04Unit>('1')
-  const [items, setItems] = useState<M25StatItem[]>([])
+  const items = useM25Items(instId, 'S04', period, unit)
+  const latest = items.at(-1)
 
   useEffect(() => {
     getS04Unit(instId).then((res) => setUnit((res.unit as S04Unit) ?? '1'))
   }, [instId])
-
-  useEffect(() => {
-    let cancelled = false
-    getM25Stat(instId, 'S04', { period, unit, limit: 100 }).then((res) => {
-      if (!cancelled) setItems(res.items)
-    })
-    return () => { cancelled = true }
-  }, [instId, period, unit])
 
   async function handleUnitChange(next: S04Unit) {
     setUnit(next)
     await setS04Unit(instId, next)
   }
 
-  const latest = items.at(-1)
-
   return (
-    <section className="panel numeric-card">
-      <div className="panel-heading">
-        <h3>S04 · 主动买卖量</h3>
-        <div className="bar-selector">
-          {S01_S04_S05_PERIODS.map((p) => (
-            <button key={p} className={p === period ? 'active' : ''} onClick={() => setPeriod(p)}>{p}</button>
-          ))}
-        </div>
-      </div>
-      <div className="unit-selector">
-        {S04_UNITS.map((u) => (
-          <button key={u.value} className={u.value === unit ? 'active' : ''} onClick={() => handleUnitChange(u.value)}>
-            {u.label}
-          </button>
-        ))}
-      </div>
-      {period === '1D' && <p className="bar-hint">日线按纽约自然日（00:00 ET）划分</p>}
-      {latest ? (
-        <div className="m25-stat-grid">
-          <div>买入量：{formatDecimal(latest.buyVol)}</div>
-          <div>卖出量：{formatDecimal(latest.sellVol)}</div>
-        </div>
-      ) : <p className="empty-hint">暂无数据</p>}
-    </section>
+    <StatBlock
+      title="S04 · 主动买卖量"
+      latest={
+        <span className="m25-stat-latest">
+          {latest && (
+            <>
+              <span className="s04-buy">买 {formatDecimal(latest.buyVol)}</span>
+              <span className="s04-sell">卖 {formatDecimal(latest.sellVol)}</span>
+            </>
+          )}
+          <span className="unit-selector">
+            {S04_UNITS.map((u) => (
+              <button key={u.value} className={u.value === unit ? 'active' : ''} onClick={() => handleUnitChange(u.value)}>
+                {u.label}
+              </button>
+            ))}
+          </span>
+        </span>
+      }
+    >
+      <StatLineChart items={items} lines={S04_LINES} />
+    </StatBlock>
   )
 }
 
-/** M25 补充统计面板：S01/S05，均按该永续产品的 instId 查询（S04 见 S04Chart）。 */
+/** M25 补充统计面板：S01、S04、S05 依次排列，共用周期选择，均按该永续产品的 instId 查询。 */
 export function M25Panel({ instId }: { instId: string }) {
   const [period, setPeriod] = useState<M25Period>('5m')
 
@@ -149,11 +170,11 @@ export function M25Panel({ instId }: { instId: string }) {
           ))}
         </div>
       </div>
-      {/* S01/S05 的 1D 取纽约自然日 00:00 的读数；见后端 ny_day.py。S04 已上移至与 M01
-          同一行的 S04Chart（见 ProductPanel.tsx），自带独立周期选择器。 */}
+      {/* 1D 由后端按纽约自然日从官方 1H 派生：S01/S05 取日界读数，S04 按日求和；见 ny_day.py。 */}
       {period === '1D' && <p className="bar-hint">日线按纽约自然日（00:00 ET）划分</p>}
-      <StatLineChart title="S01 · 多空持仓人数比" queryKey={instId} metric="S01" period={period} valueKey="longShortAcctRatio" />
-      <StatLineChart title="S05 · 持仓量历史" queryKey={instId} metric="S05" period={period} valueKey="oi" />
+      <SingleStat title="S01 · 多空持仓人数比" instId={instId} metric="S01" period={period} field="longShortAcctRatio" />
+      <S04Stat instId={instId} period={period} />
+      <SingleStat title="S05 · 持仓量历史" instId={instId} metric="S05" period={period} field="oi" />
     </section>
   )
 }

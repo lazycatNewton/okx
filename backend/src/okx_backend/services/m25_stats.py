@@ -4,7 +4,8 @@
 - S01/S04/S05：按 `instId`，周期 `5m/15m/1D`。其中 `1D` 不使用 OKX 的 `1D`（UTC+8 开盘
   口径）或 `1Dutc`（UTC+0 口径），而是请求官方 `1H` 后在后端按纽约自然日重采样，
   与全系统统一的纽约时间展示对齐（见 services/ny_day.py）。
-- 所有历史保留 7 天。
+- 保留与回填窗口均为“官方每个粒度最多可取的最近 1,440 条”：`5m` 5 天、`15m` 15 天；
+  `1D` 由 1,440 根 `1H`（60 天）派生，保留最近 58 个纽约自然日（含当天），缺失时回填补齐。
 - 启动回填之后，S01/S04/S05 在各自周期结束后请求对应周期；短暂请求失败保留最近有效数据，
   下一个计划周期重试，不伪造新记录。
 """
@@ -16,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from okx_backend.db.base import session_scope
@@ -25,6 +27,8 @@ from okx_backend.services.ny_day import (
     NY_DAY_SOURCE_BAR,
     decimal_sum,
     group_by_ny_day,
+    next_ny_day_start_ms,
+    ny_day_start_days_ago,
 )
 
 # S01/S04/S05 共享周期。
@@ -54,6 +58,27 @@ async def _throttle() -> None:
         if wait > 0:
             await asyncio.sleep(wait)
         _global_last_request_at = asyncio.get_event_loop().time()
+
+
+# 官方三个统计接口（S01/S04/S05）每个粒度最多可获取最近 1,440 条数据；保留与回填窗口
+# 都取这个上限对应的时长，存下官方能给的全部历史，又不保留无法回填重建的数据。
+OKX_STAT_MAX_ROWS = 1440
+
+# `1D` 由 1,440 根 `1H`（60 天）派生：扣掉当天（未结束）和最旧那天（窗口起点落在当天
+# 中途、取不到日界那一根），再留一天余量应对官方最新一根的发布延迟，保留 58 个自然日。
+M25_DAILY_KEEP_DAYS = OKX_STAT_MAX_ROWS // 24 - 2
+
+
+def m25_window_days(period: str) -> float:
+    """`5m/15m` 的保留/回填天数：1,440 × 周期时长（`5m` 为 5 天，`15m` 为 15 天）。"""
+
+    return OKX_STAT_MAX_ROWS * _PERIOD_SECONDS[period] / 86400
+
+
+def m25_daily_cutoff_ms(now: datetime | None = None) -> int:
+    """`1D` 保留窗口的下界：第 58 个纽约自然日（含当天）的 00:00。"""
+
+    return ny_day_start_days_ago(M25_DAILY_KEEP_DAYS - 1, now)
 
 
 # 本产品对外的日粒度。OKX 的 `1D` 是 UTC+8 开盘口径、`1Dutc` 是 UTC+0 口径，都不是
@@ -211,6 +236,38 @@ async def backfill_array_metric(
     return saved
 
 
+def missing_ny_days(existing: set[int], now: datetime | None = None) -> list[int]:
+    """保留窗口内、今天之前尚未落库的纽约自然日（日界 ts_ms，升序）。
+
+    当天的日线由轮询持续修正，不参与缺失判断，否则每次启动都会因当天未结束而回填。
+    """
+
+    today = ny_day_start_days_ago(0, now)
+    missing: list[int] = []
+    day = m25_daily_cutoff_ms(now)
+    while day < today:
+        if day not in existing:
+            missing.append(day)
+        day = next_ny_day_start_ms(day)
+    return missing
+
+
+async def _existing_daily_ts(
+    metric: M25Metric, query_key: str, unit: str | None, since_ms: int
+) -> set[int]:
+    async with session_scope() as session:
+        rows = await session.scalars(
+            select(M25Stat.ts_ms).where(
+                M25Stat.metric == metric,
+                M25Stat.query_key == query_key,
+                M25Stat.period == NY_DAY_PERIOD,
+                M25Stat.unit == (unit or ""),
+                M25Stat.ts_ms >= since_ms,
+            )
+        )
+        return set(rows.all())
+
+
 async def backfill_ny_day_metric(
     fetch: Any,
     metric: M25Metric,
@@ -218,17 +275,21 @@ async def backfill_ny_day_metric(
     unit: str | None,
     row_to_payload: Any,
     aggregate: Any,
-    cutoff_days: float,
     now: datetime | None = None,
 ) -> int:
     """`1D` 专用：`fetch` 请求的是官方 `1H`，落库前按纽约自然日重采样成日线。
 
-    存储的 `period` 仍是 `1D`（查询接口与前端口径不变），但 payload 里会带上
+    只在保留窗口（58 个纽约自然日）内有缺失日时才请求，并且只回看到最早的缺失日，
+    已完整的组合不发任何请求。存储的 `period` 仍是 `1D`，payload 里带
     `srcPeriod`/`srcTs` 标注派生来源，保留“可追溯到官方返回值”的要求。
     """
 
-    cutoff = _cutoff_ms(cutoff_days, now or datetime.now(UTC))
-    hourly = await _collect_array_rows(fetch, row_to_payload, cutoff)
+    current = now or datetime.now(UTC)
+    existing = await _existing_daily_ts(metric, query_key, unit, m25_daily_cutoff_ms(current))
+    missing = missing_ny_days(existing, current)
+    if not missing:
+        return 0
+    hourly = await _collect_array_rows(fetch, row_to_payload, missing[0])
     saved = 0
     for day_start_ms, payload in resample_ny_day(hourly, aggregate):
         await _store_stat(metric, query_key, NY_DAY_PERIOD, unit, day_start_ms, payload)
@@ -261,11 +322,12 @@ def _array_backfill_job(
     aggregate: Any,
     cutoff_days: float,
 ) -> Any:
-    """`period == "1D"` 时把官方 1H 重采样成纽约自然日，否则按原周期逐行落库。"""
+    """`period == "1D"` 时把官方 1H 重采样成纽约自然日（窗口见 `m25_daily_cutoff_ms`，
+    忽略 `cutoff_days`），否则按原周期逐行落库。"""
 
     if period == NY_DAY_PERIOD:
         return backfill_ny_day_metric(
-            fetch, metric, query_key, unit, row_to_payload, aggregate, cutoff_days,
+            fetch, metric, query_key, unit, row_to_payload, aggregate,
         )
     return backfill_array_metric(
         fetch, metric, query_key, period, unit, row_to_payload, cutoff_days,
@@ -288,13 +350,14 @@ async def backfill_m25(products: list[tuple[str, str]]) -> None:
         jobs: list[tuple[str, Any]] = []
         for inst_id in swap_products:
             for period in PERIODS_S01_S04_S05:
+                window = 0.0 if period == NY_DAY_PERIOD else m25_window_days(period)
                 jobs.append(
                     (
                         f"S01 {inst_id} {period}",
                         _array_backfill_job(
                             _s01_fetch(client, inst_id, period),
                             M25Metric.S01, inst_id, period, None, _s01_row_to_payload,
-                            ny_day_open, 7,
+                            ny_day_open, window,
                         ),
                     )
                 )
@@ -304,7 +367,7 @@ async def backfill_m25(products: list[tuple[str, str]]) -> None:
                         _array_backfill_job(
                             _s05_fetch(client, inst_id, period),
                             M25Metric.S05, inst_id, period, None, _s05_row_to_payload,
-                            ny_day_open, 7,
+                            ny_day_open, window,
                         ),
                     )
                 )
@@ -315,7 +378,7 @@ async def backfill_m25(products: list[tuple[str, str]]) -> None:
                             _array_backfill_job(
                                 _s04_fetch(client, inst_id, period, unit),
                                 M25Metric.S04, inst_id, period, unit, _s04_row_to_payload,
-                                ny_day_taker_volume_sum, 7,
+                                ny_day_taker_volume_sum, window,
                             ),
                         )
                     )
