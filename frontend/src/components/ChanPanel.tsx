@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { candlePriceFormat } from '../candleData'
 import { summarizeChan, type DivergenceSummary, type PricePosition } from '../chanSummary'
 import { PROJECT_TIME_ZONE } from '../time'
@@ -21,6 +21,26 @@ function makeTimeFormatter(bar: TradeBar) {
   return (ts: number) => format.format(new Date(ts))
 }
 
+// 收起状态按浏览器记住：本面板随 K 线周期切换重新挂载，组件内状态会被重置。
+// 存储不可用（隐私模式等）时退化为默认展开，不影响面板本身。
+const COLLAPSED_KEY = 'okx.chanPanel.collapsed'
+
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeCollapsed(collapsed: boolean): void {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0')
+  } catch {
+    // 忽略：仅影响下次挂载时是否记得收起
+  }
+}
+
 function formatDuration(ms: number): string {
   const minutes = Math.round(ms / 60_000)
   const days = Math.floor(minutes / 1440)
@@ -40,13 +60,23 @@ export function ChanPanel({ bar, items, enabled, loading }: {
   enabled: boolean
   loading: boolean
 }) {
-  const summary = useMemo(() => (enabled ? summarizeChan(items) : null), [enabled, items])
+  const [collapsed, setCollapsed] = useState(readCollapsed)
+  // 收起时不做缠论计算，展开后按当前数据即时计算。
+  const summary = useMemo(() => (enabled && !collapsed ? summarizeChan(items) : null), [enabled, collapsed, items])
   const precision = useMemo(() => candlePriceFormat(items.filter((i) => i.confirm === '1')).precision, [items])
   const fmtTime = useMemo(() => makeTimeFormatter(bar), [bar])
   const price = (value: number) => value.toFixed(precision)
 
+  function toggle() {
+    const next = !collapsed
+    setCollapsed(next)
+    writeCollapsed(next)
+  }
+
   let body: ReactNode
-  if (!enabled) {
+  if (collapsed) {
+    body = null
+  } else if (!enabled) {
     body = <p className="empty-hint">{bar} 周期不做缠论计算；切换到 5m / 15m / 30m / 1D 查看。</p>
   } else if (loading && !summary) {
     // 切换周期后实时推送可能先于历史接口到达：只有一根未闭合 K 线时不能误报「数据不足」。
@@ -148,12 +178,23 @@ export function ChanPanel({ bar, items, enabled, loading }: {
   }
 
   return (
-    <section className="panel chan-panel" aria-label="A1 缠论结构">
+    <section className={`panel chan-panel${collapsed ? ' is-collapsed' : ''}`} aria-label="A1 缠论结构">
       <div className="panel-heading">
         <h3>A1:CHAN · 缠论结构（{bar}，ET）</h3>
-        <span className="chan-muted">仅已闭合 K 线参与计算</span>
+        <div className="chan-heading-actions">
+          {!collapsed && <span className="chan-muted">仅已闭合 K 线参与计算</span>}
+          <button
+            type="button"
+            className="chan-toggle"
+            aria-expanded={!collapsed}
+            aria-controls="chan-panel-body"
+            onClick={toggle}
+          >
+            {collapsed ? '展开 ▾' : '收起 ▴'}
+          </button>
+        </div>
       </div>
-      {body}
+      <div id="chan-panel-body" hidden={collapsed}>{body}</div>
     </section>
   )
 }

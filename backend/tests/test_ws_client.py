@@ -14,9 +14,9 @@ def test_channel_arg_is_hashable_and_deduplicates() -> None:
 
 
 def test_channel_arg_to_ws_arg_only_includes_set_fields() -> None:
-    arg = ChannelArg(channel="mark-price", inst_id="BTC-USDT-SWAP")
+    arg = ChannelArg(channel="tickers", inst_id="BTC-USDT-SWAP")
     ws_arg = arg.to_ws_arg()
-    assert ws_arg == {"channel": "mark-price", "instId": "BTC-USDT-SWAP"}
+    assert ws_arg == {"channel": "tickers", "instId": "BTC-USDT-SWAP"}
     assert "instType" not in ws_arg
 
 

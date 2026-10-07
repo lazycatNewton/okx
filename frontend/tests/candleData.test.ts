@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { candlePriceFormat, mergeCandles } from '../src/candleData.ts'
+import { candlePriceFormat, mergeCandles, quoteCurrency, volumeBar } from '../src/candleData.ts'
 import type { CandleItem } from '../src/types.ts'
 
 const candle = (ts: number, c: string, confirm = '0'): CandleItem => ({
@@ -31,4 +31,20 @@ test('price precision handles sub-cent, scientific notation and integer quotes',
   assert.deepEqual(candlePriceFormat([candle(1000, '0.092770')]), { type: 'price', precision: 5, minMove: 0.00001 })
   assert.deepEqual(candlePriceFormat([candle(1000, '1.25e-8')]), { type: 'price', precision: 10, minMove: 1e-10 })
   assert.deepEqual(candlePriceFormat([candle(1000, '100')]), { type: 'price', precision: 0, minMove: 1 })
+})
+
+test('volume bars use official volCcyQuote and keep whitespace for missing values', () => {
+  const base = { ts: 0, h: '2', l: '0.5', vol: '10', volCcy: '10', confirm: '1' }
+  const up = volumeBar({ ...base, time: 1, o: '1', c: '1.5', volCcyQuote: '1234.5' })
+  assert.equal(up.value, 1234.5)
+  assert.match(up.color ?? '', /34, 197, 94/)
+  const down = volumeBar({ ...base, time: 2, o: '1.5', c: '1', volCcyQuote: '10' })
+  assert.match(down.color ?? '', /239, 68, 68/)
+  assert.deepEqual(volumeBar({ ...base, time: 3, o: '1', c: '1', volCcyQuote: null }), { time: 3 })
+})
+
+test('quote currency comes from the second instId segment', () => {
+  assert.equal(quoteCurrency('BTC-USDT-SWAP'), 'USDT')
+  assert.equal(quoteCurrency('BTC-USDT'), 'USDT')
+  assert.equal(quoteCurrency('BTC-USD-SWAP'), 'USD')
 })

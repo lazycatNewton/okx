@@ -1,16 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ColorType, createChart, LineSeries, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts'
-import { getM25Stat, getS04Unit, setS04Unit } from '../api'
+import { getM25Stat } from '../api'
 import { formatDecimal } from '../detailDisplay'
 import { chartTimeInEt, formatChartTick, formatChartTime } from '../time'
 import type { M25Period, M25StatItem, S04Unit } from '../types'
 
 const S01_S04_S05_PERIODS: M25Period[] = ['5m', '15m', '1D']
-const S04_UNITS: { value: S04Unit; label: string }[] = [
-  { value: '0', label: '币' },
-  { value: '1', label: '合约' },
-  { value: '2', label: 'U' },
-]
+// S04 只采集并展示 `unit=2`（U）。
+const S04_UNIT: S04Unit = '2'
 
 // 后端保留官方每个粒度最多可取的 1,440 条，一次取全，图表展示完整保存窗口。
 const M25_FETCH_LIMIT = 1440
@@ -115,40 +112,21 @@ const S04_LINES: LineSpec[] = [
   { field: 'sellVol', color: '#ef4444' },
 ]
 
-/** S04 主动买卖量：买入/卖出两条折线；单位选择器（0 币/1 合约/2 U）按产品持久化最近一次选择。 */
+/** S04 主动买卖量（单位 U）：买入/卖出两条折线。 */
 function S04Stat({ instId, period }: { instId: string; period: M25Period }) {
-  const [unit, setUnit] = useState<S04Unit>('1')
-  const items = useM25Items(instId, 'S04', period, unit)
+  const items = useM25Items(instId, 'S04', period, S04_UNIT)
   const latest = items.at(-1)
-
-  useEffect(() => {
-    getS04Unit(instId).then((res) => setUnit((res.unit as S04Unit) ?? '1'))
-  }, [instId])
-
-  async function handleUnitChange(next: S04Unit) {
-    setUnit(next)
-    await setS04Unit(instId, next)
-  }
 
   return (
     <StatBlock
-      title="S04 · 主动买卖量"
+      title="S04 · 主动买卖量（U）"
       latest={
-        <span className="m25-stat-latest">
-          {latest && (
-            <>
-              <span className="s04-buy">买 {formatDecimal(latest.buyVol)}</span>
-              <span className="s04-sell">卖 {formatDecimal(latest.sellVol)}</span>
-            </>
-          )}
-          <span className="unit-selector">
-            {S04_UNITS.map((u) => (
-              <button key={u.value} className={u.value === unit ? 'active' : ''} onClick={() => handleUnitChange(u.value)}>
-                {u.label}
-              </button>
-            ))}
+        latest && (
+          <span className="m25-stat-latest">
+            <span className="s04-buy">买 {formatDecimal(latest.buyVol)}</span>
+            <span className="s04-sell">卖 {formatDecimal(latest.sellVol)}</span>
           </span>
-        </span>
+        )
       }
     >
       <StatLineChart items={items} lines={S04_LINES} />

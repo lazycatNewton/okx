@@ -62,7 +62,7 @@ async def test_activate_sends_candle_and_trade_snapshots(monkeypatch: pytest.Mon
 
 
 @pytest.mark.asyncio
-async def test_activate_sends_m10_m12_m13_m14_m15_snapshots(
+async def test_activate_does_not_send_removed_swap_snapshots(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _FakeRedis:
@@ -79,9 +79,10 @@ async def test_activate_sends_m10_m12_m13_m14_m15_snapshots(
     while not conn.queue.empty():
         messages.append(json.loads(conn.queue.get_nowait()))
     channels = {message["channel"] for message in messages}
-    assert {"mark-price", "open-interest"}.issubset(channels)
-    # 已移除的 M12/M14/M15 频道不得再出现在快照里。
-    assert not {"funding-rate", "price-limit", "estimated-price"} & channels
+    assert {"ticker", "books5", "trades"}.issubset(channels)
+    # 已移除的 M10/M13（2026-10-07）与 M12/M14/M15 频道不得再出现在快照里。
+    removed = {"mark-price", "open-interest", "funding-rate", "price-limit", "estimated-price"}
+    assert not removed & channels
 
 
 @pytest.mark.asyncio

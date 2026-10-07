@@ -105,22 +105,6 @@ export interface TradeData {
   seqId: number
 }
 
-export interface MarkPriceData {
-  instId: string
-  instType: string
-  markPx: string
-  ts: string
-}
-
-export interface OpenInterestData {
-  instId: string
-  instType: string
-  oi: string
-  oiCcy: string
-  oiUsd: string
-  ts: string
-}
-
 // 服务端 WebSocket 信封：{ type, instId, channel, data, sourceTs, receivedAt }
 export interface WsEnvelope {
   type: 'snapshot' | 'update' | 'empty'
@@ -132,8 +116,6 @@ export interface WsEnvelope {
     | CandleItem
     | TradeData
     | TradeData[]
-    | MarkPriceData
-    | OpenInterestData
     | null
   sourceTs: string | null
   receivedAt: string
@@ -150,4 +132,4 @@ export interface M25StatItem {
 }
 
 export type M25Period = '5m' | '15m' | '1D'
-export type S04Unit = '0' | '1' | '2'
+export type S04Unit = '2'

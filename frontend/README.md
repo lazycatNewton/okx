@@ -12,7 +12,7 @@ OKX 行情连接服务前端（REQ-001 核心闭环阶段）。桌面 Web，Reac
 - 独立实时数据层 `marketDataStore.ts`：封装 `/ws/app` 建连、指数退避重连、
   `activate-product`/`deactivate-product` 状态维护；渲染组件只读取规范化状态，不直连 WebSocket。
 
-尚未实现（下一步）：M10-M16/M22/M23/M25 面板、全局侧边栏、K 线通过 WebSocket 实时更新
+尚未实现（下一步）：全局侧边栏、K 线通过 WebSocket 实时更新
 （目前 M02 走 REST 轮询，未接入 `/ws/app` 的 K 线推送）。
 
 ## 本地开发

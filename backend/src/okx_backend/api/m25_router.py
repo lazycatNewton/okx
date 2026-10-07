@@ -11,7 +11,6 @@ from sqlalchemy import select
 from okx_backend.db.base import session_scope
 from okx_backend.db.models import M25Metric, M25Stat
 from okx_backend.services.m25_stats import OKX_STAT_MAX_ROWS
-from okx_backend.services.s04_unit_preference import get_s04_unit, set_s04_unit
 
 router = APIRouter(prefix="/api/market", tags=["m25"])
 
@@ -56,18 +55,3 @@ async def get_m25_stat(
             for row in rows
         ]
     }
-
-
-@router.get("/{inst_id}/m25/s04/unit")
-async def get_s04_unit_preference(inst_id: str = Path(...)) -> dict:
-    unit = await get_s04_unit(inst_id)
-    return {"unit": unit}
-
-
-@router.put("/{inst_id}/m25/s04/unit")
-async def put_s04_unit_preference(
-    inst_id: str = Path(...),
-    unit: str = Query(..., pattern="^[012]$"),
-) -> dict:
-    await set_s04_unit(inst_id, unit)
-    return {"unit": unit}

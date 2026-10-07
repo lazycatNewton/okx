@@ -17,6 +17,62 @@
 
 ## 2. 当前进度与恢复点
 
+### 0.79 A1:CHAN 面板可收起／展开（2026-10-07）
+
+用户指令「修改 A1:CHAN 的前端面板，使其可以被按钮缩放」，按“收起／展开”理解实现（若用户本意是放大缩小字号或尺寸，需另行确认）。需求正文更新为 **0.59**。
+
+**修改**：`ChanPanel.tsx` 标题栏右侧新增 `chan-toggle` 按钮（`aria-expanded`／`aria-controls`），收起时正文容器 `hidden` 且 `summarizeChan` 不执行。面板位于按 `bar` 重新挂载的 `CandleChartView` 内，组件状态会在切换周期时丢失，因此收起状态存 `localStorage`（键 `okx.chanPanel.collapsed`，读写均 try/catch，失败默认展开），这是单浏览器偏好，不进后端。`App.css` 新增 `.chan-heading-actions`／`.chan-toggle` 样式。K 线图上的缠论叠加层不受影响。
+
+**验证**：前端 tsc、lint（仅既有 1 条警告）、单元 30、图表回归 16（新增 1：点击收起后正文隐藏、切换到 15m 仍保持收起、展开后恢复且高度显著增加）通过；截图确认收起态只剩标题与“展开”按钮。
+
+### 0.78 K 线图新增成交量副图（2026-10-07）
+
+用户询问 M01「24 小时成交量（张）」能否换单位，随后提出要“基于纽约时间的每 24 小时成交量柱状图”，确认：UTC-4 指纽约时间（沿用 `America/New_York`，不另做固定偏移）；放在 K 线图下方作副图；所有周期都生成；默认且只显示 U，不做币／张切换。需求正文更新为 **0.58**。M01 卡片本身的单位未改（用户未就 0.77 后提出的三个方案作选择）。
+
+**依据**：`okx-v5-api` 0.2.0 的 `candles.md`／`historyCandles.md`：`volCcyQuote` 为以计价货币计的交易量（`BTC-USDT`、`BTC-USDT-SWAP` 为 USDT，`BTC-USD-SWAP` 为 USD）。ticker 只有滚动 24h 的 `vol24h`／`volCcy24h`，无计价币口径且不能按自然日切分，故不用 ticker。后端无需改动：`ny_day_candles.py` 已把 `1H` 的 `vol/volCcy/volCcyQuote` 按纽约自然日求和，K 线查询接口已返回 `volCcyQuote`。
+
+**前端**：`candleData.ts` 新增 `volumeBar()`（取 `volCcyQuote`，缺失输出空白点不补 0，按涨跌着色）与 `quoteCurrency()`（instId 第二段）。`CandleChart.tsx` 在 pane 1 添加 `HistogramSeries`（`priceFormat: volume`，高度 90px），整图高度 310→400（`App.css` 中 `.candle-chart .lightweight-chart` 400px），面板分隔线改为 `#334155`；增量更新的“未变化”判断加入 `volCcyQuote`，否则未闭合 K 线仅成交量增长时副图不刷新；悬停图例增加“成交量 xxx USDT”；`1D` 提示补充“成交量为当日累计”。
+
+**验证**：前端 build、lint（仅既有 1 条警告）、单元 30（新增 2）、图表回归 15（新增 1：六个周期都有 pane 1 成交量且与价格点数一致、末根值等于 `volCcyQuote`、未闭合日线仅成交量变化时副图与图例更新）通过；截图确认 1D 副图与分隔线。未连接真实后端。
+
+**遗留**：历史上若有 `volCcyQuote` 为空的 K 线（官方未返回）会显示为空白；是否需要提示，待用户反馈。
+
+### 0.77 移除 M10／M13（2026-10-07）
+
+用户指令「去掉M10/M13的相关前后端实现」，属 REQ-001 永续行情范围收缩；做法与 0.66（M12／M14／M15）、0.68（M11）一致。需求正文更新为 **0.57**，「已移除的能力」新增 M10／M13 表，范围、频道、字段、保存表、文档依据与验收中的 M10／M13 条目同步删除。AGENTS.md、backend/frontend README 同步。
+
+**后端**：`collector/market_collector.py` 不再订阅 `mark-price`／`open-interest`，删除 `_store_mark_price`／`_store_open_interest` 与仅供它们使用的 `_inst_types`；`realtime/hub.py` 去掉两个快照频道；`db/models.py` 删除 `MarkPriceSnapshot`／`OpenInterestSnapshot`；`services/retention.py` 去掉两表清理。新增迁移 `e7b3c1d90a42_drop_m10_m13_snapshots.py`（down_revision `86fae8b0e48c`）删除两表，downgrade 只重建结构。测试改为断言永续／现货只订阅 tickers/books5/trades、快照不含已移除频道。
+
+**前端**：删除 `SwapSnapshotCards.tsx`；`ProductPanel.tsx` 去掉两张卡片；`marketDataStore.ts`／`types.ts` 去掉 `markPrice`／`openInterest` 状态与类型。
+
+**不受影响**：M25 S05 持仓量历史（REST `open-interest-history`）照常。
+
+**验证**：后端 ruff／mypy／pytest 118 passed；`alembic heads` 为 `e7b3c1d90a42`，离线 `upgrade --sql` 只生成两表的 DROP INDEX／DROP TABLE。前端 build、lint（仅既有 1 条警告）、单元 28、图表回归 14 通过。未连接真实数据库执行迁移。
+
+**注意**：部署的 initContainer 会执行 `alembic upgrade head`（见 `backend/Dockerfile` 注释），推送发版后生产库两表即被删除，数据不可恢复（实时快照无法回填）。
+
+### 0.76 M25 `1D` 改为 60 天，三个周期统一“先查库、有缺失才补”（2026-10-07）
+
+用户复核并确认：S01／S04／S05 保存官方允许的最大时长——`5m` 5 天、`15m` 15 天、`1D` 60 天，全部采用先查库、有缺失才补。复核时发现与当时代码有两处不符：`1D` 实为 58 天；`5m`／`15m` 每次启动全量拉取，未查库。需求正文更新为 **0.56**。
+
+**修改**（`services/m25_stats.py`）：`M25_DAILY_KEEP_DAYS` 改为 `1440//24=60`；新增 `m25_cutoff_ms(period)`（清理与回填共用的窗口下界）、`missing_slots(period, existing)`（`5m/15m` 按 UTC 纪元对齐的槽位，去掉最旧 1 个、最新 2 个）；`_existing_daily_ts` 泛化为 `_existing_ts(..., period, ...)`；`backfill_array_metric` 改为先查库、无缺失不请求、否则回看到最早缺失槽位，去掉 `cutoff_days` 参数（`_array_backfill_job`／`backfill_m25` 同步）。`services/retention.py` 改用 `m25_cutoff_ms`。
+
+**边界说明**：`1D` 最旧一天的日界 1H 在纽约午夜前一两小时可能已滑出官方 1,440 条窗口，此时该日若未落库会被判为缺失、尝试请求但取不到，只会多发几页请求，不伪造。`5m/15m` 若官方本身有数据空洞（新上市、维护），每次启动也会重复请求到该空洞为止。首次回填约 135 次请求；之后正常重启通常只需补停机期间的少量槽位（一页即可）。
+
+**验证**：ruff、mypy、后端 pytest 118 passed（新增槽位窗口与余量、15m 完整时不请求；分页、隔离故障测试改为模拟查库）。未连接真实 OKX／MySQL。
+
+### 0.75 S04 仅保留 U（2026-10-07）
+
+用户指令「S04 仅保留 U 的选项」。需求正文更新为 **0.55**。
+
+**修改**：后端 `S04_UNITS` 改为 `("2",)`，回填与轮询只针对 `unit=2`（每个永续产品的 S04 任务由 9 个降为 3 个，首次回填请求约由 225 次降为 135 次）。删除 `services/s04_unit_preference.py` 与 `GET/PUT /api/market/{instId}/m25/s04/unit`；`M25UnitPreference` 模型与 `m25_unit_preferences` 表暂留（docstring 标注已停用），未做迁移。前端 `M25Panel.tsx` 去掉单位选择器，S04 固定以 `unit=2` 请求，标题改为“S04 · 主动买卖量（U）”；`api.ts` 删除 `getS04Unit/setS04Unit`，`S04Unit` 类型收窄为 `'2'`；`App.css` 删除 `.unit-selector` 样式。
+
+**存量**：`m25_stats` 中 S04 `unit=0/1` 行不再写入也不再展示，按各周期保留窗口自然过期（`1D` 最长约 58 天）。
+
+**验证**：后端 ruff／mypy／pytest 116 passed；前端 build、lint（无新增警告）、单元 28、图表回归 14 通过。未连接真实环境。
+
+**遗留（未确认）**：是否删除 `m25_unit_preferences` 表／模型、是否立即删除 S04 `unit=0/1` 存量，待用户决定。
+
 ### 0.74 M25 全部周期改为官方最大历史；S04 折线图移入 M25 面板（2026-10-07）
 
 用户指令「S01／S04／S05 都改为官方最多能拉的历史。并且将 S04 折线图化，排列在 S01 之后的一块区域中」。取代 0.73 的“`1D` 15 天”。需求正文更新为 **0.54**。
@@ -487,3 +543,8 @@ Skill 查询：先读取 SKILL.md 与 sites.json 检查兼容性；按模块索�
 | 2026-10-07 | 0.72 | 用户指令：M01／M03／M05／M10／M13 暂停写入 MySQL，仅保留 Redis 最新值，旧数据自然过期。采集器去掉五处 upsert；表、模型与 7 天清理保留。需求更新为 0.52；后端 ruff／mypy／107 项测试通过。 |
 | 2026-10-07 | 0.73 | 用户指令：M25 `1D` 改为保存 15 个纽约自然日，缺失则回填。核验三个统计接口 1,440 条上限（`1H` 约 60 天）；回填前查库仅补缺失日，清理按周期拆分。需求更新为 0.53；后端 ruff／mypy／115 项测试通过。 |
 | 2026-10-07 | 0.74 | 用户指令：S01／S04／S05 改为官方最大历史（1,440 条：5m 5 天、15m 15 天、1D 58 个纽约自然日），S04 改为折线图并移到 M25 面板 S01 之后。查询上限放宽至 1440。需求更新为 0.54；后端 116、前端单元 28／图表回归 14 通过，模拟渲染截图确认布局。 |
+| 2026-10-07 | 0.75 | 用户指令：S04 仅保留 U。后端只采集 `unit=2`，删除单位偏好接口与服务（表／模型暂留）；前端去掉单位选择器。需求更新为 0.55；后端 116、前端单元 28／图表回归 14 通过。 |
+| 2026-10-07 | 0.76 | 用户确认：S01／S04／S05 保存官方最大时长（5m 5 天、15m 15 天、1D 60 天），三个周期统一先查库、有缺失才补。复核发现并修正 1D 原为 58 天、5m／15m 原为全量拉取。需求更新为 0.56；后端 118 项测试通过。 |
+| 2026-10-07 | 0.77 | 用户指令：移除 M10／M13 前后端实现。采集订阅、Redis、实时频道、模型与清理、前端卡片全部删除，新增迁移删除两表。需求更新为 0.57；后端 118、前端单元 28／图表回归 14 通过。 |
+| 2026-10-07 | 0.78 | 用户指令：K 线图下方新增成交量副图，所有周期，单位固定为官方 `volCcyQuote`（U），1D 为纽约自然日累计。仅前端改动；需求更新为 0.58；前端单元 30、图表回归 15 通过。 |
+| 2026-10-07 | 0.79 | 用户指令：A1:CHAN 面板加收起／展开按钮，状态按浏览器 localStorage 记住、跨周期切换保持，收起时不计算。需求更新为 0.59；前端单元 30、图表回归 16 通过。 |

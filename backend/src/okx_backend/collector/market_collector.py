@@ -7,7 +7,8 @@
 
 已选产品集合来自订阅目录（数据库当前有效配置），本采集器只处理"持续采集"部分——
 即：只要产品仍是已选且 live，无论 Tab 是否激活、浏览器是否连接，都要采集。
-目前只有 M02 K 线落 MySQL；M01/M03/M05/M10/M13 仅写 Redis 最新值（2026-10-07）。
+目前只有 M02 K 线落 MySQL；M01/M03/M05 仅写 Redis 最新值（2026-10-07）。
+M10/M13 已按用户指令移除（2026-10-07），不再订阅 `mark-price`/`open-interest`。
 `activate-product`/`deactivate-product`（浏览器实时分发开关）不影响这里的 desired 集合。
 """
 
@@ -79,7 +80,6 @@ class MarketCollector:
         settings = get_settings()
         self._public_ws = OkxWsClient(settings.okx_ws_public, self._on_public_message)
         self._business_ws = OkxWsClient(settings.okx_ws_business, self._on_business_message)
-        self._inst_types: dict[str, str] = {}  # inst_id -> instType，供 M01 payload 补全
 
     def start(self) -> None:
         self._public_ws.start()
@@ -92,23 +92,18 @@ class MarketCollector:
     def apply_selected_products(self, products: list[tuple[str, str, str | None]]) -> None:
         """`products`: [(instId, instType, instFamily), ...]，只包含已选且 live 的产品。"""
 
-        self._inst_types = {inst_id: inst_type for inst_id, inst_type, _ in products}
         public_channels: set[ChannelArg] = set()
         business_channels: set[ChannelArg] = set()
-        for inst_id, inst_type, _ in products:
+        for inst_id, *_ in products:
             public_channels.add(ChannelArg(channel="tickers", inst_id=inst_id))
             public_channels.add(ChannelArg(channel="books5", inst_id=inst_id))
             public_channels.add(ChannelArg(channel="trades", inst_id=inst_id))
             for bar in TRADE_SOURCE_BARS:
                 business_channels.add(ChannelArg(channel=f"candle{bar}", inst_id=inst_id))
-            if inst_type == "SWAP":
-                # M10/M13：需求文档只对永续接入，现货不订阅这些频道。
-                public_channels.add(ChannelArg(channel="mark-price", inst_id=inst_id))
-                public_channels.add(ChannelArg(channel="open-interest", inst_id=inst_id))
         self._public_ws.set_desired_channels(public_channels)
         self._business_ws.set_desired_channels(business_channels)
 
-    # -- public: tickers / books5 / trades / M10 / M13 ------------------------
+    # -- public: tickers / books5 / trades ------------------------------------
     async def _on_public_message(self, message: dict) -> None:
         arg = message.get("arg", {})
         channel = arg.get("channel")
@@ -122,14 +117,8 @@ class MarketCollector:
         elif channel == "trades":
             for row in data:
                 await self._store_public_trade(arg.get("instId"), row)
-        elif channel == "mark-price":
-            for row in data:
-                await self._store_mark_price(row)
-        elif channel == "open-interest":
-            for row in data:
-                await self._store_open_interest(row)
 
-    # M01/M03/M05/M10/M13 暂不落 MySQL（用户指令，2026-10-07）：仅维护 Redis 最新值并广播。
+    # M01/M03/M05 暂不落 MySQL（用户指令，2026-10-07）：仅维护 Redis 最新值并广播。
     # 对应表、模型与 7 天保留清理暂留，让存量行自然过期。
     async def _store_ticker(self, row: dict) -> None:
         inst_id = row["instId"]
@@ -160,25 +149,6 @@ class MarketCollector:
         latest = [row, *[item for item in latest if item.get("tradeId") != trade_id]][:100]
         await redis.set(key, json.dumps(latest), ex=120)
         await get_hub().broadcast_update(inst_id, "trades", row)
-
-    # -- public: M10 mark-price / M13 open-interest（均仅永续）-----------------
-    async def _store_mark_price(self, row: dict) -> None:
-        inst_id = row.get("instId")
-        if inst_id is None:
-            logger.warning(f"mark-price row missing instId: {row!r}")
-            return
-        redis = get_redis()
-        await redis.set(f"m10:latest:{inst_id}", json.dumps(row), ex=120)
-        await get_hub().broadcast_update(inst_id, "mark-price", row)
-
-    async def _store_open_interest(self, row: dict) -> None:
-        inst_id = row.get("instId")
-        if inst_id is None:
-            logger.warning(f"open-interest row missing instId: {row!r}")
-            return
-        redis = get_redis()
-        await redis.set(f"m13:latest:{inst_id}", json.dumps(row), ex=120)
-        await get_hub().broadcast_update(inst_id, "open-interest", row)
 
     # -- business: trade candles ---------------------------------------------
     async def _on_business_message(self, message: dict) -> None:

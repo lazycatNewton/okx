@@ -115,7 +115,8 @@ class SubscriptionConfigVersion(Base):
 
 
 class M25UnitPreference(Base):
-    """S04 单位偏好：每个产品最近一次选择，永久保留（unit: 0 币 / 1 合约 / 2 U）。"""
+    """S04 单位偏好（已停用）：S04 自 2026-10-07 固定为 `unit=2`（U），不再读写本表；
+    表与模型暂留，未做删表迁移。"""
 
     __tablename__ = "m25_unit_preferences"
 
@@ -226,40 +227,6 @@ class Book5Snapshot(Base, _SiteMixin):
     asks: Mapped[list] = mapped_column(JSON)
     bids: Mapped[list] = mapped_column(JSON)
     raw_payload: Mapped[dict] = mapped_column(JSON)
-
-
-# ---------------------------------------------------------------------------
-# M10 标记价格（7 天，每秒快照，仅永续）
-# ---------------------------------------------------------------------------
-
-
-class MarkPriceSnapshot(Base, _SiteMixin):
-    __tablename__ = "m10_mark_price_snapshots"
-    __table_args__ = (UniqueConstraint("inst_id", "ts_ms", name="uq_m10_inst_ts"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    inst_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    inst_type: Mapped[str] = mapped_column(String(16), nullable=False)
-    ts_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    mark_px: Mapped[str | None] = mapped_column(String(64))
-
-
-# ---------------------------------------------------------------------------
-# M13 持仓总量（7 天，每秒快照，仅永续）
-# ---------------------------------------------------------------------------
-
-
-class OpenInterestSnapshot(Base, _SiteMixin):
-    __tablename__ = "m13_open_interest_snapshots"
-    __table_args__ = (UniqueConstraint("inst_id", "ts_ms", name="uq_m13_inst_ts"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    inst_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    inst_type: Mapped[str] = mapped_column(String(16), nullable=False)
-    ts_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    oi: Mapped[str | None] = mapped_column(String(64))
-    oi_ccy: Mapped[str | None] = mapped_column(String(64))
-    oi_usd: Mapped[str | None] = mapped_column(String(64))
 
 
 # ---------------------------------------------------------------------------

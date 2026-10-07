@@ -4,8 +4,6 @@
 import type {
   Book5Data,
   CandleItem,
-  MarkPriceData,
-  OpenInterestData,
   TickerData,
   TradeData,
   WsEnvelope,
@@ -22,8 +20,6 @@ export interface ProductRealtimeState {
   books5: ChannelState<Book5Data>
   candles: Record<string, ChannelState<CandleItem>>
   trades: ChannelState<TradeData[]>
-  markPrice: ChannelState<MarkPriceData>
-  openInterest: ChannelState<OpenInterestData>
 }
 
 type Listener = () => void
@@ -37,8 +33,6 @@ function emptyProductState(): ProductRealtimeState {
     books5: { status: 'empty', data: null, receivedAt: null },
     candles: {},
     trades: { status: 'empty', data: null, receivedAt: null },
-    markPrice: { status: 'empty', data: null, receivedAt: null },
-    openInterest: { status: 'empty', data: null, receivedAt: null },
   }
 }
 
@@ -154,10 +148,6 @@ class MarketDataStore {
         .filter((item, index, items) => items.findIndex((other) => other.tradeId === item.tradeId) === index)
         .slice(0, 100)
       productState.trades = { status: envelope.type, data: next, receivedAt: envelope.receivedAt }
-    } else if (envelope.channel === 'mark-price') {
-      productState.markPrice = channelState as ChannelState<MarkPriceData>
-    } else if (envelope.channel === 'open-interest') {
-      productState.openInterest = channelState as ChannelState<OpenInterestData>
     }
     this.state.set(envelope.instId, { ...productState })
     this.notify()

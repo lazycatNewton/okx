@@ -94,18 +94,6 @@ export function getM25Stat(
   )
 }
 
-export function getS04Unit(instId: string): Promise<{ unit: string }> {
-  return request(`/api/market/${encodeURIComponent(instId)}/m25/s04/unit`)
-}
-
-export function setS04Unit(instId: string, unit: string): Promise<{ unit: string }> {
-  const search = new URLSearchParams({ unit })
-  return request(
-    `/api/market/${encodeURIComponent(instId)}/m25/s04/unit?${search.toString()}`,
-    { method: 'PUT' },
-  )
-}
-
 // M22/M23 全局侧边栏：不透明 cursor 分页。
 export function getEventContractMarkets(
   cursor?: string | null,

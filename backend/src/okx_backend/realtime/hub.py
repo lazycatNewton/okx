@@ -26,8 +26,6 @@ CHANNEL_KEYS = {
     "ticker": "m01:latest:{inst_id}",
     "books5": "m05:latest:{inst_id}",
     "trades": "m03:latest:{inst_id}",
-    "mark-price": "m10:latest:{inst_id}",
-    "open-interest": "m13:latest:{inst_id}",
     **{
         f"candle:trade:{bar}": f"m02:latest:{{inst_id}}:{bar}"
         for bar in TRADE_BARS

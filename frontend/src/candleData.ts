@@ -29,3 +29,25 @@ export function candlePriceFormat(items: CandleItem[]) {
   // 1 / 10 ** n 而非 10 ** -n：后者在部分 V8 版本（如 Node 22）上得到 0.000009999… 这类误差值。
   return { type: 'price' as const, precision, minMove: 1 / 10 ** precision }
 }
+
+export interface VolumeBar<T> {
+  time: T
+  value?: number
+  color?: string
+}
+
+const VOLUME_UP = 'rgba(34, 197, 94, 0.55)'
+const VOLUME_DOWN = 'rgba(239, 68, 68, 0.55)'
+
+// 成交量副图统一用官方 `volCcyQuote`（计价货币，USDT 本位即 U）；缺失时输出空白点，
+// 保持与价格序列的时间轴一一对应，而不是伪造 0。颜色随该根 K 线涨跌。
+export function volumeBar<T>(item: CandleItem & { time: T }): VolumeBar<T> {
+  const value = item.volCcyQuote === null ? NaN : Number(item.volCcyQuote)
+  if (!Number.isFinite(value)) return { time: item.time }
+  return { time: item.time, value, color: Number(item.c) >= Number(item.o) ? VOLUME_UP : VOLUME_DOWN }
+}
+
+// instId 的第二段即计价货币：BTC-USDT / BTC-USDT-SWAP → USDT，BTC-USD-SWAP → USD。
+export function quoteCurrency(instId: string): string {
+  return instId.split('-')[1] ?? ''
+}

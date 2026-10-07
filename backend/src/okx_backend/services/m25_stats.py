@@ -5,7 +5,8 @@
   口径）或 `1Dutc`（UTC+0 口径），而是请求官方 `1H` 后在后端按纽约自然日重采样，
   与全系统统一的纽约时间展示对齐（见 services/ny_day.py）。
 - 保留与回填窗口均为“官方每个粒度最多可取的最近 1,440 条”：`5m` 5 天、`15m` 15 天；
-  `1D` 由 1,440 根 `1H`（60 天）派生，保留最近 58 个纽约自然日（含当天），缺失时回填补齐。
+  `1D` 由 1,440 根 `1H`（60 天）派生，保留最近 60 个纽约自然日（含当天）。
+- 回填一律先查库：窗口内有缺失才请求，并且只回看到最早的缺失点。
 - 启动回填之后，S01/S04/S05 在各自周期结束后请求对应周期；短暂请求失败保留最近有效数据，
   下一个计划周期重试，不伪造新记录。
 """
@@ -33,7 +34,8 @@ from okx_backend.services.ny_day import (
 
 # S01/S04/S05 共享周期。
 PERIODS_S01_S04_S05: tuple[str, ...] = ("5m", "15m", "1D")
-S04_UNITS: tuple[str, ...] = ("0", "1", "2")
+# S04 只采集 `unit=2`（U，用户指令 2026-10-07）；`0` 币／`1` 合约不再采集，存量按保留窗口自然过期。
+S04_UNITS: tuple[str, ...] = ("2",)
 
 _PERIOD_SECONDS = {"5m": 300.0, "15m": 900.0, "1H": 3600.0, "1D": 86400.0}
 
@@ -64,9 +66,15 @@ async def _throttle() -> None:
 # 都取这个上限对应的时长，存下官方能给的全部历史，又不保留无法回填重建的数据。
 OKX_STAT_MAX_ROWS = 1440
 
-# `1D` 由 1,440 根 `1H`（60 天）派生：扣掉当天（未结束）和最旧那天（窗口起点落在当天
-# 中途、取不到日界那一根），再留一天余量应对官方最新一根的发布延迟，保留 58 个自然日。
-M25_DAILY_KEEP_DAYS = OKX_STAT_MAX_ROWS // 24 - 2
+# `1D` 由 1,440 根 `1H`（60 天）派生，保留 60 个纽约自然日（含当天）。最旧那天的日界
+# 1H 只在当天大部分时间仍处于官方 1,440 条窗口内；临近纽约午夜时可能已滑出，此时该日
+# 若尚未落库将无法补齐（缺失检查会照常尝试，取不到就跳过，不伪造）。
+M25_DAILY_KEEP_DAYS = OKX_STAT_MAX_ROWS // 24
+
+# `5m/15m` 缺失检查的边界余量：窗口最旧一个槽位可能恰好滑出官方 1,440 条，最新两个
+# 槽位可能尚未发布，这些槽位不参与缺失判断，避免每次启动都误判缺失而重复请求。
+_SLOT_MARGIN_OLD = 1
+_SLOT_MARGIN_NEW = 2
 
 
 def m25_window_days(period: str) -> float:
@@ -76,7 +84,7 @@ def m25_window_days(period: str) -> float:
 
 
 def m25_daily_cutoff_ms(now: datetime | None = None) -> int:
-    """`1D` 保留窗口的下界：第 58 个纽约自然日（含当天）的 00:00。"""
+    """`1D` 保留窗口的下界：第 60 个纽约自然日（含当天）的 00:00。"""
 
     return ny_day_start_days_ago(M25_DAILY_KEEP_DAYS - 1, now)
 
@@ -213,6 +221,43 @@ async def _collect_array_rows(
         end = str(oldest - 1)
 
 
+def m25_cutoff_ms(period: str, now: datetime | None = None) -> int:
+    """各周期保留窗口的下界（清理与回填共用）。"""
+
+    current = now or datetime.now(UTC)
+    if period == NY_DAY_PERIOD:
+        return m25_daily_cutoff_ms(current)
+    return _cutoff_ms(m25_window_days(period), current)
+
+
+def missing_slots(period: str, existing: set[int], now: datetime | None = None) -> list[int]:
+    """`5m/15m` 保留窗口内尚未落库的时间槽（升序）。槽位按 UTC 纪元整倍数对齐，与 OKX
+    统计数据的 `ts` 一致；首尾余量见 `_SLOT_MARGIN_OLD`/`_SLOT_MARGIN_NEW`。"""
+
+    current = now or datetime.now(UTC)
+    step = int(_PERIOD_SECONDS[period] * 1000)
+    now_ms = int(current.timestamp() * 1000)
+    first = -(-m25_cutoff_ms(period, current) // step) * step + _SLOT_MARGIN_OLD * step
+    last = (now_ms // step) * step - _SLOT_MARGIN_NEW * step
+    return [ts for ts in range(first, last + 1, step) if ts not in existing]
+
+
+async def _existing_ts(
+    metric: M25Metric, query_key: str, period: str, unit: str | None, since_ms: int
+) -> set[int]:
+    async with session_scope() as session:
+        rows = await session.scalars(
+            select(M25Stat.ts_ms).where(
+                M25Stat.metric == metric,
+                M25Stat.query_key == query_key,
+                M25Stat.period == period,
+                M25Stat.unit == (unit or ""),
+                M25Stat.ts_ms >= since_ms,
+            )
+        )
+        return set(rows.all())
+
+
 async def backfill_array_metric(
     fetch: Any,
     metric: M25Metric,
@@ -220,17 +265,21 @@ async def backfill_array_metric(
     period: str,
     unit: str | None,
     row_to_payload: Any,
-    cutoff_days: float,
     now: datetime | None = None,
 ) -> int:
-    """`fetch(end=...) -> list[list[str]]`；按 `row_to_payload(row) -> (ts_ms, payload)` 解析。
+    """`5m/15m`：先查库，窗口内无缺失则不请求；否则按 `end` 分页回看到最早的缺失槽位。
 
+    `fetch(end=...) -> list[list[str]]`；按 `row_to_payload(row) -> (ts_ms, payload)` 解析。
     返回本次实际写入的行数（用于测试与观测，不代表累计总量）。
     """
 
-    cutoff = _cutoff_ms(cutoff_days, now or datetime.now(UTC))
+    current = now or datetime.now(UTC)
+    existing = await _existing_ts(metric, query_key, period, unit, m25_cutoff_ms(period, current))
+    missing = missing_slots(period, existing, current)
+    if not missing:
+        return 0
     saved = 0
-    for ts_ms, payload in await _collect_array_rows(fetch, row_to_payload, cutoff):
+    for ts_ms, payload in await _collect_array_rows(fetch, row_to_payload, missing[0]):
         await _store_stat(metric, query_key, period, unit, ts_ms, payload)
         saved += 1
     return saved
@@ -252,22 +301,6 @@ def missing_ny_days(existing: set[int], now: datetime | None = None) -> list[int
     return missing
 
 
-async def _existing_daily_ts(
-    metric: M25Metric, query_key: str, unit: str | None, since_ms: int
-) -> set[int]:
-    async with session_scope() as session:
-        rows = await session.scalars(
-            select(M25Stat.ts_ms).where(
-                M25Stat.metric == metric,
-                M25Stat.query_key == query_key,
-                M25Stat.period == NY_DAY_PERIOD,
-                M25Stat.unit == (unit or ""),
-                M25Stat.ts_ms >= since_ms,
-            )
-        )
-        return set(rows.all())
-
-
 async def backfill_ny_day_metric(
     fetch: Any,
     metric: M25Metric,
@@ -279,13 +312,15 @@ async def backfill_ny_day_metric(
 ) -> int:
     """`1D` 专用：`fetch` 请求的是官方 `1H`，落库前按纽约自然日重采样成日线。
 
-    只在保留窗口（58 个纽约自然日）内有缺失日时才请求，并且只回看到最早的缺失日，
+    只在保留窗口（60 个纽约自然日）内有缺失日时才请求，并且只回看到最早的缺失日，
     已完整的组合不发任何请求。存储的 `period` 仍是 `1D`，payload 里带
     `srcPeriod`/`srcTs` 标注派生来源，保留“可追溯到官方返回值”的要求。
     """
 
     current = now or datetime.now(UTC)
-    existing = await _existing_daily_ts(metric, query_key, unit, m25_daily_cutoff_ms(current))
+    existing = await _existing_ts(
+        metric, query_key, NY_DAY_PERIOD, unit, m25_daily_cutoff_ms(current)
+    )
     missing = missing_ny_days(existing, current)
     if not missing:
         return 0
@@ -320,22 +355,22 @@ def _array_backfill_job(
     unit: str | None,
     row_to_payload: Any,
     aggregate: Any,
-    cutoff_days: float,
 ) -> Any:
-    """`period == "1D"` 时把官方 1H 重采样成纽约自然日（窗口见 `m25_daily_cutoff_ms`，
-    忽略 `cutoff_days`），否则按原周期逐行落库。"""
+    """`period == "1D"` 时把官方 1H 重采样成纽约自然日，否则按原周期逐行落库；
+    两者都先查库、只补缺失。"""
 
     if period == NY_DAY_PERIOD:
         return backfill_ny_day_metric(
             fetch, metric, query_key, unit, row_to_payload, aggregate,
         )
     return backfill_array_metric(
-        fetch, metric, query_key, period, unit, row_to_payload, cutoff_days,
+        fetch, metric, query_key, period, unit, row_to_payload,
     )
 
 
 async def backfill_m25(products: list[tuple[str, str]]) -> None:
-    """为已选 live 永续产品回填 M25 历史；不阻塞实时采集，重复键由 upsert 覆盖。
+    """为已选 live 永续产品回填 M25 历史（各组合先查库、只补缺失）；不阻塞实时采集，
+    重复键由 upsert 覆盖。
 
     `products`：[(instId, instType), ...]，只处理 instType == SWAP（M25 仅适用永续）。
     单个 (指标, 产品, 周期) 组合失败不应让其余已选产品/指标的回填全部落空；
@@ -350,14 +385,13 @@ async def backfill_m25(products: list[tuple[str, str]]) -> None:
         jobs: list[tuple[str, Any]] = []
         for inst_id in swap_products:
             for period in PERIODS_S01_S04_S05:
-                window = 0.0 if period == NY_DAY_PERIOD else m25_window_days(period)
                 jobs.append(
                     (
                         f"S01 {inst_id} {period}",
                         _array_backfill_job(
                             _s01_fetch(client, inst_id, period),
                             M25Metric.S01, inst_id, period, None, _s01_row_to_payload,
-                            ny_day_open, window,
+                            ny_day_open,
                         ),
                     )
                 )
@@ -367,7 +401,7 @@ async def backfill_m25(products: list[tuple[str, str]]) -> None:
                         _array_backfill_job(
                             _s05_fetch(client, inst_id, period),
                             M25Metric.S05, inst_id, period, None, _s05_row_to_payload,
-                            ny_day_open, window,
+                            ny_day_open,
                         ),
                     )
                 )
@@ -378,7 +412,7 @@ async def backfill_m25(products: list[tuple[str, str]]) -> None:
                             _array_backfill_job(
                                 _s04_fetch(client, inst_id, period, unit),
                                 M25Metric.S04, inst_id, period, unit, _s04_row_to_payload,
-                                ny_day_taker_volume_sum, window,
+                                ny_day_taker_volume_sum,
                             ),
                         )
                     )

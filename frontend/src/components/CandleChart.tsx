@@ -4,23 +4,27 @@ import {
   ColorType,
   createChart,
   createSeriesMarkers,
+  HistogramSeries,
   LineSeries,
   type IChartApi,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type Time,
 } from 'lightweight-charts'
-import { candlePriceFormat, candleWindowMs } from '../candleData'
+import { candlePriceFormat, candleWindowMs, quoteCurrency, volumeBar } from '../candleData'
 import { computeChanOverlay, isChanEnabledForBar, type ChanKind } from '../chanOverlay'
 import { ChanStrokePrimitive, ChanZhongshuPrimitive } from '../chanPrimitives'
 import { ChanPanel } from './ChanPanel'
 import { buildCandleLegend } from '../chartDisplay'
+import { formatDecimal } from '../detailDisplay'
 import type { ProductRealtimeState } from '../marketDataStore'
 import { chartTimeInEt, formatChartTick, formatChartTime } from '../time'
 import { useCandleData } from '../useCandleData'
 import type { CandleItem, TradeBar } from '../types'
 
 const TRADE_BARS: TradeBar[] = ['1s', '1m', '5m', '15m', '30m', '1D']
+// 成交量副图（pane 1）高度；价格主图占其余部分。
+const VOLUME_PANE_HEIGHT = 90
 
 interface GenericCandleChartProps {
   instId: string
@@ -49,6 +53,7 @@ function CandleChartView({ instId, realtime, kind, title, bar, setBar, bars, ari
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | ISeriesApi<'Line'> | null>(null)
+  const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const zhongshuPrimitiveRef = useRef<ChanZhongshuPrimitive | null>(null)
   const strokePrimitiveRef = useRef<ChanStrokePrimitive | null>(null)
   const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
@@ -73,14 +78,18 @@ function CandleChartView({ instId, realtime, kind, title, bar, setBar, bars, ari
 
   const hoveredItem = chartData.find(item => item.time === hoveredTime)
   const hoveredCandle = hoveredItem ? buildCandleLegend(hoveredItem) : null
+  const quote = quoteCurrency(instId)
 
   useEffect(() => {
     const element = containerRef.current
     if (!element) return
     const chart = createChart(element, {
       autoSize: true,
-      height: 310,
-      layout: { background: { type: ColorType.Solid, color: '#111827' }, textColor: '#cbd5e1' },
+      height: 400,
+      layout: {
+        background: { type: ColorType.Solid, color: '#111827' }, textColor: '#cbd5e1',
+        panes: { separatorColor: '#334155' },
+      },
       grid: { vertLines: { color: '#1f2937' }, horzLines: { color: '#1f2937' } },
       crosshair: { mode: 1 },
       // 触屏上纵向滑动交给页面滚动，否则手指落在图表上就无法上下翻页；横向拖动仍平移图表。
@@ -99,6 +108,13 @@ function CandleChartView({ instId, realtime, kind, title, bar, setBar, bars, ari
       ? chart.addSeries(LineSeries, { color: '#38bdf8', lineWidth: 2 })
       : chart.addSeries(CandlestickSeries, { upColor: '#22c55e', downColor: '#ef4444', borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444' })
     seriesRef.current = series
+    // 成交量副图：与价格共用时间轴，独立价格刻度；所有周期都显示，单位为计价货币（U）。
+    volumeRef.current = chart.addSeries(
+      HistogramSeries,
+      { priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false },
+      1,
+    )
+    chart.panes()[1]?.setHeight(VOLUME_PANE_HEIGHT)
 
     const zhongshuPrimitive = new ChanZhongshuPrimitive()
     const strokePrimitive = new ChanStrokePrimitive()
@@ -118,6 +134,7 @@ function CandleChartView({ instId, realtime, kind, title, bar, setBar, bars, ari
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
+      volumeRef.current = null
       zhongshuPrimitiveRef.current = null
       strokePrimitiveRef.current = null
       markersPluginRef.current = null
@@ -128,8 +145,9 @@ function CandleChartView({ instId, realtime, kind, title, bar, setBar, bars, ari
 
   useEffect(() => {
     const series = seriesRef.current
+    const volume = volumeRef.current
     const chart = chartRef.current
-    if (!series || !chart) return
+    if (!series || !volume || !chart) return
     if (chartData.length) series.applyOptions({ priceFormat: candlePriceFormat(chartData) })
     const previous = renderedDataRef.current
     const previousByTime = new Map(previous.map(item => [item.time, item]))
@@ -143,6 +161,7 @@ function CandleChartView({ instId, realtime, kind, title, bar, setBar, bars, ari
       } else {
         ;(series as ISeriesApi<'Candlestick'>).setData(chartData.map(item => ({ time: item.time, open: Number(item.o), high: Number(item.h), low: Number(item.l), close: Number(item.c) })))
       }
+      volume.setData(chartData.map(volumeBar))
       if (visible && previous.length) {
         // 补入较早时间点会改变逻辑索引；以原可见边界对应的时间锚点保留视图。
         const indexes = new Map(chartData.map((item, index) => [item.time, index]))
@@ -155,13 +174,15 @@ function CandleChartView({ instId, realtime, kind, title, bar, setBar, bars, ari
     } else {
       for (const item of chartData) {
         const old = previousByTime.get(item.time)
-        if (old && old.o === item.o && old.h === item.h && old.l === item.l && old.c === item.c) continue
+        // 未闭合 K 线的成交量可能在价格不变时增长，因此成交量变化也要触发更新。
+        if (old && old.o === item.o && old.h === item.h && old.l === item.l && old.c === item.c && old.volCcyQuote === item.volCcyQuote) continue
         const historical = (item.time as number) < lastTime
         if (bar === '1s') {
           ;(series as ISeriesApi<'Line'>).update({ time: item.time, value: Number(item.c) }, historical)
         } else {
           ;(series as ISeriesApi<'Candlestick'>).update({ time: item.time, open: Number(item.o), high: Number(item.h), low: Number(item.l), close: Number(item.c) }, historical)
         }
+        volume.update(volumeBar(item), historical)
       }
     }
     renderedDataRef.current = chartData
@@ -190,7 +211,7 @@ function CandleChartView({ instId, realtime, kind, title, bar, setBar, bars, ari
       </div>
       {/* OKX 的 1D 是 UTC+8 开盘口径；本产品的日线由官方 1H 在后端按纽约自然日重采样，
           这里明确标注口径，避免与交易所页面上的日线逐根对不上时产生误解。 */}
-      {bar === '1D' && <p className="bar-hint">日线按纽约自然日（00:00 ET）划分</p>}
+      {bar === '1D' && <p className="bar-hint">日线按纽约自然日（00:00 ET）划分，成交量为当日累计</p>}
       <div className="candle-ohlc-legend" aria-live="polite">
         {hoveredCandle ? (
           <>
@@ -198,12 +219,13 @@ function CandleChartView({ instId, realtime, kind, title, bar, setBar, bars, ari
             <span>开盘 <strong>{hoveredCandle.open}</strong></span>
             <span>最高 <strong>{hoveredCandle.high}</strong></span>
             <span>最低 <strong>{hoveredCandle.low}</strong></span>
+            <span>成交量 <strong>{formatDecimal(hoveredItem?.volCcyQuote)}</strong> {quote}</span>
           </>
         ) : <span className="candle-ohlc-placeholder"><span className="hint-pointer">移动光标查看 OHLC</span><span className="hint-touch">触摸图表查看 OHLC</span></span>}
       </div>
       {loading && items.length === 0 && <p className="empty-hint">加载中…</p>}
       {/* 保留布局尺寸，避免 display:none 使自动宽度为零、首次时间范围随后被拉伸。 */}
-      <div ref={containerRef} className="lightweight-chart" aria-label={bar === '1s' ? `${ariaLabelPrefix}秒级价格折线图` : `${ariaLabelPrefix}K线图`} style={{ visibility: loading && items.length === 0 ? 'hidden' : undefined }} />
+      <div ref={containerRef} className="lightweight-chart" aria-label={bar === '1s' ? `${ariaLabelPrefix}秒级价格折线图与成交量（${quote}）` : `${ariaLabelPrefix}K线图与成交量（${quote}）`} style={{ visibility: loading && items.length === 0 ? 'hidden' : undefined }} />
       {!loading && chanEnabled && chanOverlay.boxes.length === 0 && items.length > 0 && (
         <p className="empty-hint chan-hint">当前数据暂不足以形成缠论中枢（数据事实，非缺陷）</p>
       )}

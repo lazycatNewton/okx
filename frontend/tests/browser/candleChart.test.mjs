@@ -303,3 +303,64 @@ test('candle body and wick pixel heights match OHLC on every candle period', asy
   }
   assert.deepEqual(errors, [])
 })
+
+test('every bar shows a volCcyQuote volume pane that follows volume-only realtime updates', async t => {
+  const withVolume = bar => candles(bar === '1D' ? 80 : bar === '1s' ? 7500 : 300, bar)
+    .map((item, i) => ({ ...item, volCcyQuote: String(1000 + (i % 10) * 100) }))
+  const { page, errors } = await fixture(t, { dataset: withVolume })
+  const volume = () => page.evaluate(() => {
+    const { chart, series } = window.chartRecords.at(-1)
+    return { panes: chart.panes().length, pane: series[1]?.getPane().paneIndex(), data: series[1]?.data() ?? [] }
+  })
+  for (const [bar, count] of [['5m', 300], ['1s', 7500], ['1m', 300], ['15m', 300], ['30m', 300], ['1D', 80]]) {
+    if (bar !== '5m') await page.getByRole('button', { name: bar, exact: true }).click()
+    await ready(page, count)
+    const { panes, pane, data: bars } = await volume()
+    assert.equal(panes, 2, `${bar} has a volume pane`)
+    assert.equal(pane, 1, `${bar} volume lives in pane 1`)
+    assert.equal(bars.length, count, `${bar} volume bars align with prices`)
+    assert.equal(bars.at(-1).value, Number(withVolume(bar).at(-1).volCcyQuote))
+  }
+  const screenshot = join(screenshotDir, 'trade-1D-volume.png')
+  await page.screenshot({ path: screenshot })
+  t.diagnostic(`1D volume screenshot: ${screenshot}`)
+
+  // 当天未闭合日线：价格不变、只有成交量增长时，副图也必须刷新。
+  const previous = withVolume('1D').at(-1)
+  const today = { ...previous, ts: previous.ts + 86400000, confirm: '0', volCcyQuote: '500' }
+  await push(page, today, '1D')
+  assert.equal((await volume()).data.at(-1).value, 500)
+  await push(page, { ...today, volCcyQuote: '999999' }, '1D')
+  assert.equal((await volume()).data.at(-1).value, 999999)
+  assert.ok((await hover(page, today)).includes('成交量 999999.00 USDT'))
+  assert.deepEqual(errors, [])
+})
+
+test('A1:CHAN panel collapses by button and stays collapsed across bar switches', async t => {
+  const { page, errors } = await fixture(t)
+  await ready(page, 300)
+  const panel = page.locator('section.chan-panel')
+  const toggle = panel.getByRole('button', { name: /收起|展开/ })
+  await page.waitForFunction(() => document.querySelector('.chan-stats') !== null)
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'true')
+
+  await toggle.click()
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
+  assert.equal(await panel.locator('.chan-stats').count(), 0)
+  assert.ok(!(await panel.locator('#chan-panel-body').isVisible()))
+  const collapsedHeight = (await panel.boundingBox()).height
+  const screenshot = join(screenshotDir, 'chan-collapsed.png')
+  await page.screenshot({ path: screenshot })
+  t.diagnostic(`collapsed screenshot: ${screenshot}`)
+
+  // 切换周期会重新挂载面板，收起状态必须保留。
+  await page.getByRole('button', { name: '15m', exact: true }).click()
+  await ready(page, 300)
+  assert.equal(await panel.getByRole('button', { name: /展开/ }).getAttribute('aria-expanded'), 'false')
+  assert.equal(await panel.locator('.chan-stats').count(), 0)
+
+  await panel.getByRole('button', { name: /展开/ }).click()
+  await page.waitForFunction(() => document.querySelector('.chan-stats') !== null)
+  assert.ok((await panel.boundingBox()).height > collapsedHeight * 3)
+  assert.deepEqual(errors, [])
+})

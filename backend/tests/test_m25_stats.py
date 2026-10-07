@@ -18,6 +18,7 @@ from okx_backend.services.m25_stats import (
     _throttle,
     backfill_array_metric,
     backfill_ny_day_metric,
+    missing_slots,
     ny_day_open,
     period_seconds,
     poll_interval_seconds,
@@ -54,23 +55,30 @@ def test_s05_row_to_payload_parses_oi_triplet() -> None:
     }
 
 
+async def _no_existing(*args) -> set[int]:  # noqa: ANN002
+    return set()
+
+
 @pytest.mark.asyncio
-async def test_backfill_array_metric_stops_at_cutoff(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_backfill_array_metric_stops_at_oldest_missing_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     stored: list[tuple] = []
 
     async def fake_store(metric, query_key, period, unit, ts_ms, raw_payload):  # noqa: ANN001
         stored.append((metric, query_key, period, unit, ts_ms))
 
     monkeypatch.setattr("okx_backend.services.m25_stats._store_stat", fake_store)
+    monkeypatch.setattr("okx_backend.services.m25_stats._existing_ts", _no_existing)
+    monkeypatch.setattr("okx_backend.services.m25_stats._throttle", AsyncMock())
 
     now = datetime(2026, 9, 13, tzinfo=UTC)
-    cutoff_ms = int(now.timestamp() * 1000) - 7 * 86400 * 1000
-    # 第一页返回满 100 条（均晚于 cutoff），表示官方仍有更旧数据可翻页；
-    # 第二页只有 1 条且早于 cutoff，触发停止。真实 API 语义：返回条数小于上限
-    # 才代表数据已耗尽，所以第一页必须填满，否则测试会与 backfill_array_metric
-    # 的“返回行数<100 视为耗尽”提前退出逻辑产生假阳性。
-    page_one = [[str(cutoff_ms + 100_000 - i), "1.1"] for i in range(100)]
-    pages = [page_one, [[str(cutoff_ms - 10_000), "1.3"]]]
+    oldest_missing = missing_slots("5m", set(), now)[0]
+    # 第一页返回满 100 条（均晚于最早缺失槽位），表示官方仍有更旧数据可翻页；
+    # 第二页只有 1 条且早于该槽位，触发停止。真实 API 语义：返回条数小于上限
+    # 才代表数据已耗尽，所以第一页必须填满，否则会被“页不满视为耗尽”提前退出。
+    page_one = [[str(oldest_missing + 100_000 - i), "1.1"] for i in range(100)]
+    pages = [page_one, [[str(oldest_missing - 10_000), "1.3"]]]
 
     async def fake_fetch(end: str | None) -> list[list[str]]:
         return pages.pop(0) if pages else []
@@ -82,21 +90,20 @@ async def test_backfill_array_metric_stops_at_cutoff(monkeypatch: pytest.MonkeyP
         period="5m",
         unit=None,
         row_to_payload=_s01_row_to_payload,
-        cutoff_days=7,
         now=now,
     )
     assert saved == 101
     assert len(stored) == 101
+    assert pages == []
 
 
 @pytest.mark.asyncio
 async def test_backfill_array_metric_stops_when_page_short(monkeypatch: pytest.MonkeyPatch) -> None:
-    """未触及 cutoff 但返回行数小于 100（页大小上限）时也应停止，避免死循环请求空页。"""
+    """未触及最早缺失槽位但返回行数小于 100（页大小上限）时也应停止，避免死循环请求空页。"""
 
-    async def fake_store(*args, **kwargs):  # noqa: ANN001, ANN002, ANN003
-        return None
-
-    monkeypatch.setattr("okx_backend.services.m25_stats._store_stat", fake_store)
+    monkeypatch.setattr("okx_backend.services.m25_stats._store_stat", AsyncMock())
+    monkeypatch.setattr("okx_backend.services.m25_stats._existing_ts", _no_existing)
+    monkeypatch.setattr("okx_backend.services.m25_stats._throttle", AsyncMock())
 
     now = datetime(2026, 9, 13, tzinfo=UTC)
     call_count = 0
@@ -114,11 +121,45 @@ async def test_backfill_array_metric_stops_when_page_short(monkeypatch: pytest.M
         period="5m",
         unit=None,
         row_to_payload=_s05_row_to_payload,
-        cutoff_days=7,
         now=now,
     )
     assert saved == 1
     assert call_count == 1
+
+
+def test_missing_slots_window_and_margins() -> None:
+    """5m 窗口 5 天、15m 窗口 15 天，槽位按纪元对齐；去掉最旧 1 个和最新 2 个槽位。"""
+
+    now = datetime(2026, 9, 13, 12, 7, tzinfo=UTC)
+    now_ms = int(now.timestamp() * 1000)
+    for period, step_min, days in (("5m", 5, 5), ("15m", 15, 15)):
+        step = step_min * 60_000
+        slots = missing_slots(period, set(), now)
+        assert all(ts % step == 0 for ts in slots)
+        assert slots[-1] == (now_ms // step) * step - 2 * step
+        assert slots[0] - step >= now_ms - days * 86_400_000
+        assert slots[0] - 2 * step < now_ms - days * 86_400_000
+        assert len(slots) == days * 86_400_000 // step - 3
+        assert missing_slots(period, set(slots), now) == []
+
+
+@pytest.mark.asyncio
+async def test_backfill_array_metric_skips_request_when_window_complete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 9, 13, tzinfo=UTC)
+    complete = set(missing_slots("15m", set(), now))
+
+    async def existing(*args) -> set[int]:  # noqa: ANN002
+        return complete
+
+    fetch = AsyncMock()
+    monkeypatch.setattr("okx_backend.services.m25_stats._existing_ts", existing)
+    saved = await backfill_array_metric(
+        fetch, M25Metric.S04, "BTC-USDT-SWAP", "15m", "2", _s04_row_to_payload, now=now,
+    )
+    assert saved == 0
+    fetch.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -163,6 +204,7 @@ async def test_backfill_m25_isolates_one_failing_product_from_others(
 
     monkeypatch.setattr(m25_stats, "_store_stat", fake_store)
     monkeypatch.setattr(m25_stats, "_throttle", AsyncMock())
+    monkeypatch.setattr(m25_stats, "_existing_ts", _no_existing)
 
     class _FakeClient:
         async def __aenter__(self) -> _FakeClient:
@@ -232,7 +274,7 @@ async def test_ny_day_backfill_requests_hourly_and_stores_one_row_per_new_york_d
     async def no_existing(*args) -> set[int]:  # noqa: ANN002
         return set()
 
-    monkeypatch.setattr("okx_backend.services.m25_stats._existing_daily_ts", no_existing)
+    monkeypatch.setattr("okx_backend.services.m25_stats._existing_ts", no_existing)
 
     saved = await backfill_ny_day_metric(
         fetch, M25Metric.S01, "NVDA-USDT-SWAP", None,
@@ -258,9 +300,9 @@ def test_missing_ny_days_covers_prior_days_in_window_and_excludes_today() -> Non
 
     now = datetime(2026, 11, 10, 18, tzinfo=UTC)  # 窗口跨过 11-01 夏令时结束
     all_missing = missing_ny_days(set(), now)
-    assert M25_DAILY_KEEP_DAYS == 58
-    assert len(all_missing) == 57
-    assert all_missing[0] == m25_daily_cutoff_ms(now) == ny_day_start_days_ago(57, now)
+    assert M25_DAILY_KEEP_DAYS == 60
+    assert len(all_missing) == 59
+    assert all_missing[0] == m25_daily_cutoff_ms(now) == ny_day_start_days_ago(59, now)
     assert ny_day_start_days_ago(0, now) not in all_missing
 
     assert missing_ny_days(set(all_missing), now) == []
@@ -281,7 +323,7 @@ async def test_ny_day_backfill_skips_request_when_window_complete(
         return complete
 
     fetch = AsyncMock()
-    monkeypatch.setattr("okx_backend.services.m25_stats._existing_daily_ts", existing)
+    monkeypatch.setattr("okx_backend.services.m25_stats._existing_ts", existing)
 
     saved = await backfill_ny_day_metric(
         fetch, M25Metric.S05, "BTC-USDT-SWAP", None,
@@ -312,7 +354,7 @@ async def test_ny_day_backfill_pages_back_only_to_oldest_missing_day(
         top = int(end) if end else now_ms
         return [[str(top - i * 3_600_000), "1.0"] for i in range(100)]
 
-    monkeypatch.setattr("okx_backend.services.m25_stats._existing_daily_ts", existing)
+    monkeypatch.setattr("okx_backend.services.m25_stats._existing_ts", existing)
     monkeypatch.setattr("okx_backend.services.m25_stats._throttle", AsyncMock())
     monkeypatch.setattr("okx_backend.services.m25_stats._store_stat", AsyncMock())
 
